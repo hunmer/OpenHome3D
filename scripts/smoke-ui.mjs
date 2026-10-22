@@ -131,6 +131,8 @@ try {
     return page.evaluate(() => {
       const store = window.__store
       const failures = []
+      // growing to 12×12 is a paid expansion in the economy layer
+      store.setState({ coins: 1_000_000 })
       const assertAllFit = (label) => {
         const { home } = store.getState()
         const rect = home.rooms[0].rect
@@ -172,6 +174,7 @@ try {
             home: { rooms: [room], openings: [] },
             furniture: [],
             selectedId: null,
+            coins: 1_000_000,
           }
         })
       }

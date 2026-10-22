@@ -30,6 +30,8 @@ try {
   const { deriveWalls } = await vite.ssrLoadModule('/src/gen/walls.ts')
   const { overlapAllowed } = await vite.ssrLoadModule('/src/gen/layout.ts')
   const s = () => store.getState()
+  // paid actions (placement/rooms) run against a padded wallet
+  store.setState({ coins: 1_000_000 })
   const room = (id, x = 0, z = 0, w = 8, d = 8) => ({ id, type: 'living', name: id, rect: { x, z, w, d }, salt: 0, partitionHeight: 0 })
   const a = room('a'), b = room('b', 8)
   s().importHome({ rooms: [a, b], openings: [] })

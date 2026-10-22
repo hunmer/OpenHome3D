@@ -75,6 +75,7 @@ function useKeyboardShortcuts() {
       if (e.key === 'Escape') {
         s.select(null)
         s.selectOpening(null)
+        s.selectWall(null)
         return
       }
       const id = s.selectedId
@@ -163,6 +164,7 @@ export default function SceneRoot() {
         const d = downPos.current
         if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) return
         useStore.getState().select(null)
+        useStore.getState().selectWall(null)
       }}
     >
       <CameraRig />

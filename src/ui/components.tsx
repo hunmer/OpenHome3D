@@ -271,6 +271,22 @@ export function IconButton({
   )
 }
 
+/** Gold coin glyph for the economy layer: filled disc, ink ring, inner ring. */
+export function CoinIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      style={{ flex: 'none', verticalAlign: '-2px' }}
+    >
+      <circle cx="8" cy="8" r="6.6" fill="var(--yellow)" stroke="var(--ink)" strokeWidth="1.8" />
+      <circle cx="8" cy="8" r="3.2" fill="none" stroke="var(--ink)" strokeWidth="1.6" />
+    </svg>
+  )
+}
+
 /** Observe when an element scrolls into view (lazy thumbnails). Stays true once seen. */
 export function useInView<T extends HTMLElement>() {
   const [el, setEl] = useState<T | null>(null)

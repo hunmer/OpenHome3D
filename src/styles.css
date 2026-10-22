@@ -798,6 +798,79 @@ textarea.input:focus,
   white-space: nowrap;
 }
 
+/* ------------------------------- coin wallet ------------------------------- */
+
+.coin-menu {
+  position: relative;
+  display: flex;
+}
+
+.coin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+  font-variant-numeric: tabular-nums;
+}
+
+.coin-badge {
+  /* inline chip (never absolute): keeps the pill's box honest for the overflow audit */
+  display: inline-flex;
+  align-items: center;
+  background: var(--green);
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 2px 4px;
+  margin-left: 2px;
+  white-space: nowrap;
+}
+
+.coin-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0; /* left-aligned under the leftmost cam-bar item */
+  z-index: 45;
+  width: 270px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  box-shadow: var(--shadow);
+}
+
+.coin-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.coin-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.coin-cap {
+  height: 10px;
+  border: 2px solid var(--ink);
+  background: #fff;
+}
+
+.coin-cap span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
 /* -------------------------------- status bar ------------------------------- */
 
 .statusbar {
@@ -850,14 +923,26 @@ textarea.input:focus,
   height: 24px;
 }
 
-.status-hint {
-  font-size: 9px;
-  color: var(--muted);
-  white-space: nowrap;
-  /* yields before anything else: shrinks + ellipsizes on narrow canvases */
+/* structure pill (wall / opening selected by clicking the structure editor) */
+.struct-pill .struct-kind {
+  width: auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 2px 4px;
+  font-size: 10px;
+  pointer-events: auto;
+}
+
+.struct-pill .struct-val {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 38px;
+  text-align: center;
+}
+
+.struct-pill .struct-add {
+  padding: 4px 8px;
+  font-size: 10px;
 }
 
 .status-info {
@@ -876,38 +961,6 @@ textarea.input:focus,
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-/* compact 网格 Grid input riding the status info line */
-.status-grid {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  pointer-events: auto;
-}
-
-.status-grid input {
-  width: 44px;
-  border: 2px solid var(--ink);
-  border-radius: 0;
-  padding: 1px 4px;
-  font: inherit;
-  text-align: right;
-  color: var(--text);
-  background: #fff;
-  -moz-appearance: textfield;
-  appearance: textfield;
-}
-
-.status-grid input::-webkit-outer-spin-button,
-.status-grid input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.status-grid input:focus {
-  outline: none;
-  box-shadow: 2px 2px 0 var(--blue);
 }
 
 /* ---------------------------------- toasts --------------------------------- */
@@ -1136,6 +1189,69 @@ textarea.input:focus,
 .card-name {
   font-size: 9px;
   color: var(--label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* economy: placement price chip over the card's top-left thumb corner */
+.card-price {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--yellow);
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 2px 4px;
+  box-shadow: 2px 2px 0 var(--ink);
+  white-space: nowrap;
+}
+
+.card-price.free {
+  background: var(--green);
+}
+
+.card-owned {
+  color: var(--green);
+  font-weight: 800;
+  margin-left: 3px;
+}
+
+/* storage box entry: original room + place button */
+.card-room {
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-place {
+  width: 100%;
+  justify-content: center;
+}
+
+/* model browser: paid-pick confirmation bar pinned under the grid */
+.mb-confirm {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 2px solid var(--ink);
+  background: var(--panel);
+}
+
+.mb-confirm-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1855,10 +1971,6 @@ textarea.input:focus,
     padding: 0 8px;
     justify-content: flex-start;
     flex-wrap: wrap;
-  }
-
-  .status-hint {
-    display: none;
   }
 
   .status-info {

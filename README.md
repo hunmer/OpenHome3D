@@ -158,6 +158,16 @@ Project packages contain resources used by the current scene; they omit unused u
 
 The active scene is stored in localStorage; uploads, reference photos, AI history and the original floor plan use IndexedDB. Both are scoped to the browser origin (protocol, host and port). Changing the port or clearing website data can hide or remove previous work; save a project file before moving browsers or machines.
 
+## 养成玩法 Nurture-game economy
+
+OpenHome3D plays like a cozy home-nurture game on top of the editor:
+
+- **金币 Coins** live in the top bar. Idle income accrues at `2×rooms + 1×distinct placed models` coins per minute (offline accrual caps at 12 hours) and a daily check-in pays `100 + streak bonus`. Claim both from the coin popover.
+- **Every placement costs coins** — adding, swapping or duplicating furniture charges the model's price (by type tier; built-ins are half price, your own uploads are free). The first purchase of a model adds it to your **图鉴 catalog**, which auto-layout (Shuffle, new rooms, templates) draws from — for free. Unlock more models and regeneration gets richer.
+- **Rooms cost coins too**: a new room or a grown room charges 10 coins per added m²; shrinking is free.
+- **储物箱 Storage**: select a piece and press the store-away button in the status bar to stash it for free; place it back any time from the Storage modal in the Furniture section.
+- Spending is final — deleting, undoing or replacing a plan never refunds coins — but your wallet, catalog and storage box survive “New plan”, so progress is account-level.
+
 ## Local AI behavior
 
 The path is browser → Vite `/api/ai/*` → `codex exec`. The app does not read credentials or require an API key; `HOME3D_CODEX_BIN` can select the codex executable. Both floor-plan recognition and render orchestration explicitly select **GPT-6 Astra** (`--model gpt-6-astra`). Recognition uses `medium` reasoning effort; render orchestration uses `high`. Both are configured in `scripts/ai-config.mjs` instead of inheriting the user's global default. See the [official model page](https://developers.openai.com/api/docs/models/gpt-6-astra). Rendering still calls codex's `image_gen` tool: GPT-6 Astra is the orchestration model, not a claim about the image tool's own model version.
@@ -271,6 +281,16 @@ The in-app **家居生成器 Cartoon** brand remains intact in this open-source 
 2. **把卡通方案重绘成效果图**：完成 3D 布局后，可以生成写实、电影感、动画、赛博霓虹、水彩、粘土或赛璐璐风格的图片，并用滑动对比查看 3D 原图与生成结果。
 
 AI 只在本机开发服务器中运行。OpenHome3D 不读取 Codex 登录文件，也不要求你填写 API key；在线 Demo 仍然保持纯静态、纯浏览器运行。
+
+### 养成玩法：金币、解锁与储物箱
+
+编辑器之上是一层轻松的养成玩法：
+
+- **金币**：顶栏金币胶囊随时可领「挂机收入」和「每日签到」。产出速度 = 每分钟 2×房间数 + 1×摆放的不同家具种数，离线最多累计 12 小时。
+- **摆放付费，首次解锁**：手动添加/换模/复制家具都要金币（按类型分档，内建模型五折，自己上传的模型免费）。首次付费的模型进入**图鉴**；「换一换」、新房间和模板等自动布置只从图鉴免费选模——图鉴越丰富，自动布置越好。
+- **房间扩展收费**：新房间和扩大房间按 10 金币/m² 计费，缩小免费。
+- **储物箱**：选中家具点状态栏「收进储物箱」即可免费收起，在侧栏「储物箱」里随时免费摆回。
+- 花费不退款（删除/撤销/新建方案都不返还），但金币、图鉴和储物箱**跨方案保留**，养成进度不会清零。
 
 ### 三种开始方式
 

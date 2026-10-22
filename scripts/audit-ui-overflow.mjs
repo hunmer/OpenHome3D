@@ -191,6 +191,8 @@ const STATES = [
         const s = window.__store.getState()
         window.__origHome = window.__origHome ?? JSON.parse(JSON.stringify(s.home))
         s.select(null)
+        // adding rooms is paid in the economy layer
+        window.__store.setState({ coins: 1_000_000 })
         if (s.home.rooms.length < 3) {
           s.addRoom('bedroom')
           s.addRoom('balcony')

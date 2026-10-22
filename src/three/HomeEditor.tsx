@@ -13,7 +13,9 @@
  *   (existing setRoomRect behavior, intended).
  * - Opening markers: small colored boxes on the wall lines (door wood, open
  *   light wood, window mid blue; 打通/fullHeight lavender). Click selects the
- *   opening (sidebar shows its editor).
+ *   opening (status bar shows its editor).
+ * - Wall strips: thin clickable strips on every wall line. Click selects the
+ *   wall (status bar offers +door/+window/+open-up).
  *
  * All handlers stopPropagation so events never reach furniture or
  * onPointerMissed; furniture above the overlays stays clickable (its own
@@ -35,6 +37,7 @@ import {
   type HomeDef,
   type Opening,
   type RoomDef,
+  type Side,
 } from '../state/home'
 import { EDGE, SELECT_EDGE } from '../models/parametric/shared'
 import { PALETTE, SHELL } from '../models/palette'
@@ -42,6 +45,8 @@ import { requestView } from './runtime'
 
 /** Minimum room dimension during a resize drag (same floor as the store). */
 const MIN_DIM = 1.5
+
+const SIDES: Side[] = ['n', 's', 'e', 'w']
 
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
 
@@ -314,10 +319,59 @@ function OpeningMarker({
   )
 }
 
+/**
+ * Thin clickable strip lying on a room's wall line — this is how a wall gets
+ * selected (click wall → status-bar pill offers door/window/balcony). Shared
+ * walls carry one strip per room; `y` staggers them so coplanar strips never
+ * z-fight (the upper one wins the raycast, either room is a valid declarer).
+ */
+function WallStrip({
+  room,
+  side,
+  y,
+  selected,
+}: {
+  room: RoomDef
+  side: Side
+  y: number
+  selected: boolean
+}) {
+  const span = sideSpan(room, side)
+  const cx = (span.from[0] + span.to[0]) / 2
+  const cz = (span.from[1] + span.to[1]) / 2
+  const alongX = side === 'n' || side === 's'
+  const len = Math.hypot(span.to[0] - span.from[0], span.to[1] - span.from[1])
+  return (
+    <mesh
+      position={[cx, y, cz]}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.stopPropagation()
+        const st = useStore.getState()
+        st.selectRoom(room.id) // activates the declaring room first (clears selection)
+        st.selectWall({ roomId: room.id, side })
+      }}
+    >
+      <boxGeometry args={alongX ? [len, 0.03, 0.1] : [0.1, 0.03, len]} />
+      <meshStandardMaterial
+        color={selected ? SELECT_EDGE : PALETTE.cream}
+        emissive={selected ? SELECT_EDGE : '#000000'}
+        emissiveIntensity={selected ? 0.7 : 0}
+        roughness={1}
+        metalness={0}
+        transparent
+        opacity={selected ? 1 : 0.75}
+      />
+      <Edges lineWidth={1} color={selected ? SELECT_EDGE : EDGE} />
+    </mesh>
+  )
+}
+
 export default function HomeEditor() {
   const home = useStore((s) => s.home)
   const activeRoomId = useStore((s) => s.activeRoomId)
   const selectedOpeningId = useStore((s) => s.selectedOpeningId)
+  const selectedWall = useStore((s) => s.selectedWall)
 
   // entering the structure editor starts from a top-down view
   useEffect(() => {
@@ -326,8 +380,19 @@ export default function HomeEditor() {
 
   return (
     <group>
-      {home.rooms.map((room) => (
-        <RoomEditor key={room.id} room={room} active={room.id === activeRoomId} />
+      {home.rooms.map((room, i) => (
+        <group key={room.id}>
+          <RoomEditor room={room} active={room.id === activeRoomId} />
+          {SIDES.map((side) => (
+            <WallStrip
+              key={side}
+              room={room}
+              side={side}
+              y={0.02 + i * 0.0015}
+              selected={selectedWall?.roomId === room.id && selectedWall.side === side}
+            />
+          ))}
+        </group>
       ))}
       {home.openings.map((o) => (
         <OpeningMarker key={o.id} home={home} opening={o} selected={o.id === selectedOpeningId} />

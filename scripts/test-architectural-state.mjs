@@ -39,6 +39,8 @@ try {
   const codec = await vite.ssrLoadModule('/src/lib/projectPackage.ts')
   const idb = await vite.ssrLoadModule('virtual:architecture-idb')
   const s = () => store.getState()
+  // paid actions (placement/rooms) run against a padded wallet
+  store.setState({ coins: 1_000_000 })
   const dimensionPlan = { ...plan, dimensions: [
     { label: '8000', axis: 'x', from: 1, to: 9, meters: 8, status: 'used' },
     { label: '9000', axis: 'x', from: 1, to: 9, meters: 9, status: 'conflict' },

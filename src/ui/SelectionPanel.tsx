@@ -120,7 +120,6 @@ function SelectionView({
         checked={inst.source !== 'generated' || !!inst.locked}
         onChange={(locked) => setFurnitureLocked(inst.id, locked)}
       />
-      <p className="caption">手工调整后自动保留。取消勾选可参与重排。<br />Edits are kept. Uncheck to regenerate.</p>
 
       <div className="lbl" style={{ marginBottom: 5 }}>
         参考照片 Reference photos
@@ -134,9 +133,7 @@ function SelectionView({
       )}
       {photos.length === 0 && (
         <p className="caption" style={{ margin: '0 0 6px' }}>
-          暂无参考照片 — 添加一张可引导 AI 出图风格
-          <br />
-          No reference photo — add one to guide AI renders
+          添加照片可引导 AI 出图 Add one to guide AI renders
         </p>
       )}
       <button type="button" className="btn btn-ghost" style={{ width: '100%' }} onClick={() => fileRef.current?.click()}>

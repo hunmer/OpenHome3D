@@ -40,12 +40,21 @@ IndexedDB 键约定：
 | `render:index`、`render:<id>` | AI 历史索引与 RenderRecord（结果/输入/提示词/参考图）；兼容旧字符串图片 |
 | `plan:image` | 最近导入的户型原图 dataURL，存取在 `src/lib/planImage.ts` |
 
+## 养成经济（金币 / 图鉴 / 储物箱）
+
+- 纯函数与常量在 `src/state/economy.ts`：类型价格表、`modelPrice`（BUILT-IN 五折、上传免费）、`roomAreaCost/expansionCost`（10 金币/m²，缩小免费）、`incomePerMinute`（2×房间 + 1×不同摆放模型，防复制/换一换刷收入）、`accruedIncome`（12h 离线上限）、`dailyReward/localDayKey/previousDayKey`、`ownedModelIds`（图鉴 = 显式 unlocked ∪ 已摆放 ∪ 已收纳 ∪ 内建 ∪ 上传，旧存档/导入自愈）。
+- store 持久化新增 `coins/unlocked/storage/lastCollectAt/lastDailyDay/dailyStreak`（版本仍为 2，merge 取默认值，无迁移）。**`storage` 进 EDIT_KEYS/SNAPSHOT_KEYS**（收起/摆回随家具一起对称入撤销栈）；**金币与图鉴永不进快照**——花费是最终行为，删除/撤销/重置不退款，领取/签到也不可被撤销回滚。
+- 付费动作（`addFurniture/duplicateFurniture/swapModel/addRoom/setRoomRect` 扩大面积）先过 `spend` 门槛：余额不足时仅写 `structureNotice`（双语）并 no-op，成功时在同一 patch 扣费并 `unlockPatch` 首次解锁；花费提示 toast 由 UI 层负责，store 不 import uiStore。`storeFurniture/placeFromStorage/collectIncome/claimDaily` 免费且 collect/claim 走 rawSet。
+- 自动布局只从图鉴选模：`layoutForRoom` 用 `ownedModelIds` 过滤 `allModels()`；`generateArchitecturalRoom/importArchitecturalFurniture` 通过可选 `models` 参数接收目录（默认 allModels 保持纯函数性与既有测试兼容）。`newRoom/newHome` 不动经济字段；`importHome/importProject/restoreCompleteProject` 用 `unlockImported` 把导入家具的 GLB 模型并入图鉴；`removeUpload` 同时清理 furniture 与 storage。
+- UI：TopBar `CoinWallet`（余额/产出/签到弹层与领取）、ModelBrowser 价格角标 + `.mb-confirm` 花费确认条（付费选择必须确认；上传件价格 0 直摆）、HomeTab 加房间按钮显示费用、RoomTab 标注扩建单价、Sidebar 储物箱入口与 StatusBar 收起按钮。金色圆币 SVG 在 `components.tsx` 的 `CoinIcon`。
+- 回归：`scripts/test-editor-state.mjs` 末段为经济断言（定价、拒付、扣费解锁、撤销不退款、收/摆对称、生成只用图鉴、收入与签到数值）。**任何脚本调用付费 action 前先 `store.setState({ coins: … })` 补金币**（test-editing-invariants、test-architectural-state、smoke-ui、audit-ui-overflow、test-interactions 均已处理）。
+
 ## 布局与结构
 
 - `generateLayout` 只依赖传入的 `LayoutOpts`（房型、种子、salt、尺寸、密度、模型集，以及可选的 `doors/preserved/decorOnly`），相同输入必须产生相同输出。store 传入的房间 seed 为 `${seed}@${room.id}`，`RoomDef.salt` 为单房间重排计数。引擎 id `f1…` 由 store 加 `${roomId}:` 前缀，合并保留件时保证唯一，用户操作 id 用 `uid()`。
 - `FurnitureInstance.source` 为 generated/manual，`decor` 标识可随密度更新的装饰，`locked` 显式保留；旧数据缺 source 时保守保留。手工添加/复制/移动/旋转/换模/参数修改标 manual。取消「换一换时保留」可重新参加生成。
 - 尺寸编辑保留家具，仅夹取位置；房型编辑保留家具和门窗。密度仅重建未保护的 generated+decor（含附属件）；shuffle/rebuild/seed 操作保留 manual/locked/旧数据，并将保留件作为生成碰撞障碍。引擎新增保留件参数后仍须保证确定性、唯一 ID。
-- 旧矩形模式中，`openingIntervals/fitOpening/reconcileOpenings` 是合法墙段的统一来源：内开口必须落在对应共享段，外开口避共享段。房间增删/移动/缩放、门窗编辑与水合后规范化；断开的开口移除，`structureNotice` 经常驻 Sidebar 展示并清除，不在 store 内依赖 UI toast。
+- 旧矩形模式中，`openingIntervals/fitOpening/reconcileOpenings` 是合法墙段的统一来源：内开口必须落在对应共享段，外开口避共享段。房间增删/移动/缩放、门窗编辑与水合后规范化；断开的开口移除，`structureNotice` 经 toast 展示并清除，不在 store 内依赖 UI toast。门窗的 UI 入口是结构编辑器的墙条/门窗标记点击 + 状态栏 StructurePill。
 - 门区由 `doorZonesFor(room, home)` 传到 `LayoutOpts.doors`，包含邻居门镜像。placeWall/placeRun 避开门区外扩 `DOOR_CLEAR=0.35`；front/center/free/ring 未避门。极小房间允许达到尝试上限后丢弃无法放置的家具。
 - `src/gen/templates.ts` 的 `buildHome(templateId, seed)` 提供 studio/1br/2br 确定性模板；`src/gen/importPlan.ts` 的 `planJsonToHome` 将识别 JSON 转为 HomeDef，fixtures 在 `scripts/fixtures/`。
 - 旧 v1 户型转换保持类型映射（garage/office/other → office、原名保留，balcony 直通）、重叠修复、近邻共边吸附且不撞第三房、内墙窗丢弃和 applied/dropped 报告。门窗支持 `at/widthM`、入户门 `wall`、打通 `open:true`；非法提示回落到默认位置和尺寸。识别 prompt/schema 调整时评估 Home3D 的识别部分，勿假定三个仓库完全一致。
@@ -77,7 +86,8 @@ IndexedDB 键约定：
 - 语义蓝 `--select` 只用于 3D 描边/卡片 outline；实心选中填充使用糖果色（房间 active 为 `--blue`）。黄色 `btn-primary` 只用于最终确认/提交，其他按钮用 `btn-ghost`，链接用 `.link-btn`。
 - 图标使用内联 SVG、strokeWidth 2、圆角线帽；字符图标加粗。文案中文在前、English 在后，类型/品牌/参数标签集中在 `src/ui/labels.ts` 和 `src/models/registry.ts`，搜索别名在 `src/models/search.ts`。
 - 弹窗根节点带 `data-modal`，3D 和编辑历史快捷键据此忽略输入。输入控件保留原生文本编辑快捷键。
-- 侧栏为「方案 Plan」（整宅 Home / 房间 Room）与「家具 Furniture」两个可折叠 Section；RoomTab 定义在 `src/ui/Sidebar.tsx`。显示开关在 TopBar 下拉，工程保存/打开与轻量布局导出、GitHub 仓库和反馈入口在侧栏底部，网格和种子在状态栏；种子不设输入框，store 的 setSeed 供脚本调用。
+- 侧栏为「方案 Plan」（整宅 Home / 房间 Room）与「家具 Furniture」两个可折叠 Section；RoomTab 定义在 `src/ui/Sidebar.tsx`。显示开关在 TopBar 下拉，工程保存/打开与轻量布局导出、GitHub 仓库和反馈入口在侧栏底部。**种子与捕捉网格只存在于 store**（`setSeed`/`moveGrid` 供脚本与吸附使用），状态栏不展示 SEED/网格等开发信息。
+- **门窗交互走 3D 选择**：结构编辑器（`HomeEditor`）为每条墙线渲染可点击墙条，点击设置会话态 `selectedWall{roomId,side}`（`selectWall`，与家具/门窗选择互斥、Escape/空点清除、进 SNAPSHOT_KEYS 但不持久化）；状态栏 `StructurePill` 据此提供 +门/+窗/+打通（外墙为阳台）与所选门窗的类型/宽度/位置/删除。HomeTab 不再常驻门窗列表（OpeningCard/MirroredCard 已删），注释性 caption 保持一行内。
 - ≤720 px 使用默认关闭的覆盖式抽屉，顶栏可横滑、弹窗近全屏、AI 面板上下堆叠；移动样式集中在 `src/styles.css` 的媒体查询。桌面/移动侧栏滚动条有意隐藏，不加回。
 
 ## 本机 AI 中间件

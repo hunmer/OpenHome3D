@@ -30,8 +30,7 @@ function RoomTab() {
     partitionHeight === 0 ? '无 none' : partitionHeight === wallHeight ? '通高 full' : 'm'
 
   if (architecture) return <>
-    <p className="caption">{room.name} · 精确轮廓 Precision outline</p>
-    <p className="caption">结构参数请在整宅面板编辑；家具可直接选择、移动和替换。Edit structure in Home; select furniture to move or replace.</p>
+    <p className="caption">{room.name} · 精确轮廓 Precision outline · 结构在整宅面板编辑 Structure edits in Home</p>
     <div className="btn-row"><GhostButton onClick={()=>setPlanTab('home')}>结构参数 Structure</GhostButton><GhostButton onClick={()=>reshuffleFurniture()}>换一换 Shuffle</GhostButton></div>
   </>
 
@@ -99,13 +98,14 @@ function RoomTab() {
         unit={partitionUnit}
         onCommit={(v) => setRoomPartition(v)}
       />
+      <p className="caption">扩建 10 金币/m²，缩小免费 Expand 10 coins/m²</p>
       <div className="btn-row">
         <GhostButton onClick={() => setConfirmNew(true)}>新建方案 New plan</GhostButton>
         <GhostButton onClick={() => reshuffleFurniture()}>换一换 Shuffle</GhostButton>
       </div>
       {confirmNew && (
         <div>
-          <p className="caption">将替换整宅和家具，可撤销。<br />Replace the entire plan and furniture. Undo is available.</p>
+          <p className="caption">将替换整宅和家具；金币与储物箱保留。Replaces plan & furniture; coins and storage are kept.</p>
           <div className="btn-row">
             <PrimaryButton onClick={() => { newRoom(); setConfirmNew(false) }}>确认覆盖 Confirm replace</PrimaryButton>
             <GhostButton onClick={() => setConfirmNew(false)}>取消 Cancel</GhostButton>
@@ -134,6 +134,7 @@ export default function Sidebar() {
 
   const extras = useStore((s) => s.extras)
   const setExtras = useStore((s) => s.setExtras)
+  const storageCount = useStore((s) => s.storage.length)
 
   const structureNotice = useStore(s => s.structureNotice)
   const dismissStructureNotice = useStore(s => s.dismissStructureNotice)
@@ -183,6 +184,11 @@ export default function Sidebar() {
           />
           <div className="btn-row">
             <GhostButton onClick={() => openModal({ kind: 'add' })}>+ 添加家具 Add furniture</GhostButton>
+          </div>
+          <div className="btn-row">
+            <GhostButton onClick={() => openModal({ kind: 'storage' })}>
+              储物箱 Storage{storageCount > 0 ? ` (${storageCount})` : ''}
+            </GhostButton>
           </div>
         </Section>
 

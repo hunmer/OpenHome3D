@@ -13,6 +13,8 @@ try {
   await page.waitForSelector('.loading-veil', { hidden: true, timeout: 10000 })
   assert.equal(await page.$('vite-error-overlay'), null)
   await page.waitForSelector('.topbar button')
+  // paid placements draw from a padded wallet; the confirm flow itself is tested below
+  await page.evaluate(() => window.__store.setState({ coins: 1_000_000 }))
 
   const clickText = async (text) => {
     const handle = await page.evaluateHandle(text => [...document.querySelectorAll('button')].find(button => button.textContent.includes(text)), text)
@@ -39,6 +41,9 @@ try {
   await page.waitForSelector('.mb-grid .card')
   const beforeAdd = (await modelState()).furniture.length
   await page.click('.mb-grid .card')
+  // economy layer: a priced pick confirms in the bottom bar before placing
+  await page.waitForSelector('.mb-confirm')
+  await page.click('.mb-confirm .btn-primary')
   await page.waitForSelector('.mb-grid', { hidden: true })
   let state = await modelState()
   assert.equal(state.furniture.length, beforeAdd + 1, 'add card must insert furniture')
@@ -56,6 +61,8 @@ try {
   await page.waitForSelector('.mb-grid .card')
   const beforeSwap = (await modelState()).furniture.find(f => f.id === id).modelId
   await page.locator('.mb-grid .card:not(.current)').click()
+  await page.waitForSelector('.mb-confirm')
+  await page.click('.mb-confirm .btn-primary')
   await page.waitForSelector('.mb-grid', { hidden: true })
   const swapped = (await modelState()).furniture.find(f => f.id === id)
   assert.notEqual(swapped.modelId, beforeSwap, 'swap must change the selected model')

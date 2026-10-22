@@ -15,6 +15,7 @@ import {
   type HomeDef,
   type Opening,
   type RoomDef,
+  type Side,
 } from './home'
 import {
   allModels,
@@ -28,6 +29,18 @@ import {
 } from '../models/registry'
 import { deletePlanImage, loadPlanImage, PLAN_IMAGE_KEY, savePlanImage } from '../lib/planImage'
 import { createHistory } from './history'
+import {
+  accruedIncome,
+  dailyReward,
+  expansionCost,
+  incomePerMinute,
+  localDayKey,
+  modelPrice,
+  ownedModelIds,
+  previousDayKey,
+  roomAreaCost,
+  STARTING_COINS,
+} from './economy'
 import type { ArchitecturalPlan } from './architecture'
 import { validateArchitecture } from '../gen/importArchitecture'
 import { architecturalFurnitureFits, canonicalArchitecturalHome, findArchitecturalPosition, generateArchitecturalRoom, importArchitecturalFurniture } from '../gen/architecturalFurniture'
@@ -74,10 +87,29 @@ export interface HGState extends StructureSettings {
   projection: Projection
   furniture: FurnitureInstance[]
   selectedId: string | null
-  /** opening selected in the HomeEditor canvas / Home tab list; NOT persisted */
+  /** opening selected in the HomeEditor canvas; NOT persisted */
   selectedOpeningId: string | null
+  /** wall (room + side) picked by clicking a wall strip in the structure editor; NOT persisted */
+  selectedWall: { roomId: string; side: Side } | null
+  selectWall: (wall: { roomId: string; side: Side } | null) => void
   uploads: ModelDef[]
   lastSwapId: string | null
+  // ---- 养成经济 Nurture-game economy ----
+  /** Coin balance; persisted but never in undo snapshots — spending is final. */
+  coins: number
+  /** GLB models paid for at least once; auto-layout picks from the ownership catalog. */
+  unlocked: string[]
+  /** Stashed furniture instances; free to place back, survives new plans. */
+  storage: FurnitureInstance[]
+  lastCollectAt: number
+  lastDailyDay: string | null
+  dailyStreak: number
+  /** Collect idle income; returns coins gained (0 when nothing accrued). */
+  collectIncome: (now?: number) => number
+  /** Claim today's check-in; returns 0 when already claimed. */
+  claimDaily: (now?: number) => number
+  storeFurniture: (id: string) => void
+  placeFromStorage: (id: string, roomId?: string) => void
   structureNotice: string | null
   dismissStructureNotice: () => void
   restoreCompleteProject: (project: CompleteProjectState) => void
@@ -146,15 +178,29 @@ export interface HGState extends StructureSettings {
  * Deterministic layout for one room. Instances get a room-prefixed id and
  * their roomId; positions stay room-local (engine math unchanged). Door
  * zones come from `s.home` — pass the next home when the calling action is
- * changing rooms/openings.
+ * changing rooms/openings. Auto-layout only picks models from the ownership
+ * catalog (paid unlocks ∪ placed/stashed ∪ built-ins ∪ uploads).
  */
+interface LayoutSource {
+  seed: string
+  extras: number
+  home: HomeDef
+  unlocked: readonly string[]
+  furniture: readonly FurnitureInstance[]
+  storage: readonly FurnitureInstance[]
+  uploads: readonly ModelDef[]
+}
+
 function layoutForRoom(
-  s: { seed: string; extras: number; home: HomeDef },
+  s: LayoutSource,
   room: RoomDef,
   preserved: FurnitureInstance[] = [],
   decorOnly = false,
 ): FurnitureInstance[] {
-  if (s.home.architecture) return generateArchitecturalRoom(s.home, room, s.seed, s.extras, preserved, decorOnly)
+  const owned = ownedModelIds(s)
+  const models = allModels().filter((m) => owned.has(m.id))
+  if (s.home.architecture)
+    return generateArchitecturalRoom(s.home, room, s.seed, s.extras, preserved, decorOnly, models)
   return generateLayout({
     roomType: room.type,
     seed: `${s.seed}@${room.id}`,
@@ -162,7 +208,7 @@ function layoutForRoom(
     width: room.rect.w,
     depth: room.rect.d,
     extras: s.extras,
-    models: allModels(),
+    models,
     preserved,
     decorOnly,
     doors: doorZonesFor(room, s.home),
@@ -179,15 +225,16 @@ function regenRoom(s: HGState, room: RoomDef, home: HomeDef = s.home): Furniture
   return [
     ...s.furniture.filter((f) => f.roomId !== room.id),
     ...preserved,
-    ...layoutForRoom({ seed: s.seed, extras: s.extras, home }, room, preserved),
+    ...layoutForRoom(
+      { seed: s.seed, extras: s.extras, home, unlocked: s.unlocked, furniture: s.furniture, storage: s.storage, uploads: s.uploads },
+      room,
+      preserved,
+    ),
   ]
 }
 
 /** Fresh layouts for every room (order follows rooms). */
-function regenAll(
-  s: { seed: string; extras: number; home: HomeDef },
-  rooms: RoomDef[],
-): FurnitureInstance[] {
+function regenAll(s: LayoutSource, rooms: RoomDef[]): FurnitureInstance[] {
   return rooms.flatMap((r) => layoutForRoom(s, r))
 }
 
@@ -256,7 +303,11 @@ function initialLayoutState() {
     seed,
     wallHeight: d.wallHeight,
     home,
-    furniture: layoutForRoom({ seed, extras: 85, home }, room),
+    // fresh players own the built-in parametrics only (see ownedModelIds)
+    furniture: layoutForRoom(
+      { seed, extras: 85, home, unlocked: [], furniture: [], storage: [], uploads: [] },
+      room,
+    ),
   }
 }
 
@@ -278,13 +329,19 @@ type Persisted = {
   furniture: FurnitureInstance[]
   uploads: ModelDef[]
   planImageKey: string | null
+  coins: number
+  unlocked: string[]
+  storage: FurnitureInstance[]
+  lastCollectAt: number
+  lastDailyDay: string | null
+  dailyStreak: number
 }
 
 const EDIT_KEYS = [
-  'home', 'seed', 'furniture', 'extras', 'wallHeight', 'cutawayWalls',
+  'home', 'seed', 'furniture', 'storage', 'extras', 'wallHeight', 'cutawayWalls',
   'floorSlab', 'windows', 'doorLeaves', 'showFurniture', 'planImageUrl', 'planImageKey',
 ] as const
-const SNAPSHOT_KEYS = [...EDIT_KEYS, 'activeRoomId', 'selectedId', 'selectedOpeningId'] as const
+const SNAPSHOT_KEYS = [...EDIT_KEYS, 'activeRoomId', 'selectedId', 'selectedOpeningId', 'selectedWall'] as const
 type SceneSnapshot = Pick<HGState, typeof SNAPSHOT_KEYS[number]>
 type EditSnapshot = SceneSnapshot & {
   /** Only project replacement restores these; ordinary editing leaves the user's view alone. */
@@ -301,6 +358,15 @@ function persistPlanImage(before: HGState, after: HGState) {
   if (after.planImageKey && !after.planImageUrl) return
   const saving = after.planImageUrl ? savePlanImage(after.planImageUrl) : deletePlanImage()
   saving.catch(() => {})
+}
+
+/** Importing brings your own furniture along — those GLB models join the catalog for free. */
+function unlockImported(s: { unlocked: string[] }, furniture: readonly FurnitureInstance[]): string[] {
+  const fresh = [...new Set(furniture.map((f) => f.modelId))].filter((id) => {
+    const def = getModel(id)
+    return def && def.kind === 'glb' && !s.unlocked.includes(id)
+  })
+  return fresh.length ? [...s.unlocked, ...fresh] : s.unlocked
 }
 
 export const useStore = create<HGState>()(
@@ -336,6 +402,17 @@ export const useStore = create<HGState>()(
         rawSet({ structureNotice: '请在专业结构面板编辑真实户型 Edit this plan in the architectural structure panel' })
         return true
       }
+      /** Gate an action behind the wallet; insufficient funds surface as a notice, no state change. */
+      const spend = (label: string, cost: number): boolean => {
+        const s = get()
+        if (cost <= s.coins) return true
+        const need = cost - s.coins
+        rawSet({ structureNotice: `金币不足，${label}还需 ${need} 金币 Not enough coins: ${need} more needed` })
+        return false
+      }
+      /** First paid placement adds the model to the auto-layout catalog. */
+      const unlockPatch = (s: HGState, modelId: string, price: number): Partial<HGState> =>
+        price > 0 && !s.unlocked.includes(modelId) ? { unlocked: [...s.unlocked, modelId] } : {}
       const restore = (direction: 'undo' | 'redo') => {
         const before = get()
         const next = history[direction](snapshot(before), (current, target) =>
@@ -362,8 +439,15 @@ export const useStore = create<HGState>()(
         furniture: init.furniture,
         selectedId: null,
         selectedOpeningId: null,
+        selectedWall: null,
         uploads: [],
         lastSwapId: null,
+        coins: STARTING_COINS,
+        unlocked: [],
+        storage: [],
+        lastCollectAt: Date.now(),
+        lastDailyDay: null,
+        dailyStreak: 0,
         structureNotice: null,
         dismissStructureNotice: () => rawSet({ structureNotice: null }),
         restoreCompleteProject: (project) => {
@@ -375,6 +459,7 @@ export const useStore = create<HGState>()(
           set({
             ...project,
             uploads,
+            unlocked: unlockImported(before, project.furniture),
             ...structurePatch(project.home, null),
             activeRoomId: project.home.rooms[0].id,
             selectedId: null,
@@ -445,12 +530,15 @@ export const useStore = create<HGState>()(
           const candidate: RoomDef = { ...room, rect: nextRect }
           // never overlap another room (a shared edge is fine)
           if (s.home.rooms.some((r) => r.id !== roomId && roomsOverlap(candidate, r))) return
+          const cost = expansionCost(room.rect.w, room.rect.d, nextRect.w, nextRect.d)
+          if (!spend('扩建房间 Expand', cost)) return
           const rooms = s.home.rooms.map((r) => (r.id === roomId ? candidate : r))
           const dimsChanged = nextRect.w !== room.rect.w || nextRect.d !== room.rect.d
           const home: HomeDef = { ...s.home, rooms }
           set({
             ...structurePatch(home, s.selectedOpeningId),
             ...(dimsChanged ? { furniture: s.furniture.map((f) => f.roomId === roomId ? reclampInstance(f, home) : f) } : {}),
+            ...(cost > 0 ? { coins: s.coins - cost } : {}),
           })
         },
 
@@ -477,7 +565,11 @@ export const useStore = create<HGState>()(
             home: { ...s.home, rooms },
             furniture: rooms.flatMap((room) => {
               const preserved = s.furniture.filter((f) => f.roomId === room.id && isPreserved(f))
-              return [...preserved, ...layoutForRoom({ seed: clean, extras: s.extras, home: { ...s.home, rooms } }, room, preserved)]
+              return [...preserved, ...layoutForRoom(
+                { seed: clean, extras: s.extras, home: { ...s.home, rooms }, unlocked: s.unlocked, furniture: s.furniture, storage: s.storage, uploads: s.uploads },
+                room,
+                preserved,
+              )]
             }),
           })
         },
@@ -510,7 +602,11 @@ export const useStore = create<HGState>()(
             wallHeight: d.wallHeight,
             planImageKey: null,
             planImageUrl: null,
-            furniture: layoutForRoom({ seed, extras: s.extras, home }, room),
+            // wallet, catalog and storage survive a new plan (progress is account-level)
+            furniture: layoutForRoom(
+              { seed, extras: s.extras, home, unlocked: s.unlocked, furniture: s.furniture, storage: s.storage, uploads: s.uploads },
+              room,
+            ),
             selectedId: null,
             selectedOpeningId: null,
           })
@@ -524,7 +620,10 @@ export const useStore = create<HGState>()(
             seed,
             home,
             activeRoomId: home.rooms[0].id,
-            furniture: regenAll({ seed, extras: s.extras, home }, home.rooms),
+            furniture: regenAll(
+              { seed, extras: s.extras, home, unlocked: s.unlocked, furniture: s.furniture, storage: s.storage, uploads: s.uploads },
+              home.rooms,
+            ),
             selectedId: null,
             selectedOpeningId: null,
             planImageKey: null,
@@ -536,12 +635,18 @@ export const useStore = create<HGState>()(
         importHome: (home, imageUrl) => {
           home = home.architecture ? canonicalArchitecturalHome(home) : reconcileOpenings(home).home
           const s = get()
-          const imported = home.architecture ? importArchitecturalFurniture(home, s.seed, s.extras) : null
+          const source = { seed: s.seed, extras: s.extras, home, unlocked: s.unlocked, furniture: s.furniture, storage: s.storage, uploads: s.uploads }
+          const owned = ownedModelIds(source)
+          const catalog = allModels().filter((m) => owned.has(m.id))
+          const imported = home.architecture ? importArchitecturalFurniture(home, s.seed, s.extras, catalog) : null
           if (imported && home.architecture) home = {...home,architecture:{...home.architecture,warnings:[...new Set(imported.warnings)]}}
+          const furniture = imported?.furniture ?? regenAll(source, home.rooms)
           set({
             home,
             activeRoomId: home.rooms.find(room => !home.architecture || ['room', 'balcony'].includes(home.architecture.spaces.find(space => space.id === room.id)!.kind))?.id ?? home.rooms[0].id,
-            furniture: imported?.furniture ?? regenAll({ seed: s.seed, extras: s.extras, home }, home.rooms),
+            furniture,
+            // imported furniture joins the ownership catalog free of charge
+            unlocked: unlockImported(s, furniture),
             structureNotice: imported?.warnings.length ? `${imported.warnings.length} 项识别/家具提示已保存在专业面板 Review ${imported.warnings.length} notes in the structure panel` : null,
             planImageKey: imageUrl ? PLAN_IMAGE_KEY : null,
             planImageUrl: imageUrl ?? null,
@@ -607,6 +712,8 @@ export const useStore = create<HGState>()(
             room.rect.z = Math.max(...blockers.map((r) => r.rect.z + r.rect.d / 2)) + room.rect.d / 2
             blockers = s.home.rooms.filter((r) => roomsOverlap(room, r))
           }
+          const cost = roomAreaCost(room.rect.w, room.rect.d)
+          if (!spend(`新建${spec.label}`, cost)) return
           const home: HomeDef = { rooms: [...s.home.rooms, room], openings: s.home.openings }
           // shell openings that violate placement rules (e.g. a window landing on
           // a now-shared interior wall) are dropped, same contract as addOpening
@@ -615,9 +722,13 @@ export const useStore = create<HGState>()(
           set({
             ...structurePatch(nextHome, s.selectedOpeningId),
             activeRoomId: room.id,
+            coins: s.coins - cost,
             furniture: [
               ...s.furniture,
-              ...layoutForRoom({ seed: s.seed, extras: s.extras, home: nextHome }, room),
+              ...layoutForRoom(
+                { seed: s.seed, extras: s.extras, home: nextHome, unlocked: s.unlocked, furniture: s.furniture, storage: s.storage, uploads: s.uploads },
+                room,
+              ),
             ],
           })
         },
@@ -644,10 +755,13 @@ export const useStore = create<HGState>()(
 
         selectRoom: (roomId) => {
           if (roomById(get().home, roomId))
-            set({ activeRoomId: roomId, selectedOpeningId: null, selectedId: null })
+            set({ activeRoomId: roomId, selectedOpeningId: null, selectedId: null, selectedWall: null })
         },
 
-        selectOpening: (id) => set({ selectedOpeningId: id }),
+        selectOpening: (id) => set({ selectedOpeningId: id, ...(id ? { selectedWall: null } : {}) }),
+
+        selectWall: (wall) =>
+          set({ selectedWall: wall, selectedOpeningId: null, selectedId: null }),
 
         addOpening: (o) => {
           if (blockRectangleEdit()) return
@@ -655,7 +769,8 @@ export const useStore = create<HGState>()(
           if (!roomById(s.home, o.a)) return
           const next = fitOpening(s.home, { ...o, id: uid() })
           if (!next) { set({ structureNotice: '该墙段无法放置门窗 No suitable wall segment for this opening' }); return }
-          set({ home: { ...s.home, openings: [...s.home.openings, next] } })
+          // select the new opening so the status-bar editor takes over from the wall pill
+          set({ home: { ...s.home, openings: [...s.home.openings, next] }, selectedOpeningId: next.id, selectedWall: null })
         },
         removeOpening: (id) => {
           if (blockRectangleEdit()) return
@@ -838,6 +953,7 @@ export const useStore = create<HGState>()(
             extras: Number.isFinite(p.extras) ? Math.max(0, Math.min(100, Math.round(p.extras))) : 50,
             home,
             furniture,
+            unlocked: unlockImported(get(), furniture),
             activeRoomId: rooms[0].id,
             selectedId: null,
             selectedOpeningId: null,
@@ -854,7 +970,12 @@ export const useStore = create<HGState>()(
           if (extras === s.extras) return
           const furniture = s.home.rooms.flatMap((room) => {
             const preserved = s.furniture.filter((f) => f.roomId === room.id && (isPreserved(f) || !f.decor))
-            return [...preserved, ...layoutForRoom({ seed: s.seed, extras, home: s.home }, room, preserved, true)]
+            return [...preserved, ...layoutForRoom(
+              { seed: s.seed, extras, home: s.home, unlocked: s.unlocked, furniture: s.furniture, storage: s.storage, uploads: s.uploads },
+              room,
+              preserved,
+              true,
+            )]
           })
           set({ extras, furniture })
         },
@@ -867,6 +988,8 @@ export const useStore = create<HGState>()(
           const def = getModel(modelId)
           if (!def) return
           const s = get()
+          const price = modelPrice(def)
+          if (!spend(`摆放 ${def.name}`, price)) return
           const room = roomById(s.home, s.activeRoomId) ?? s.home.rooms[0]
           if (!room) return
           const inst: FurnitureInstance = {
@@ -885,7 +1008,12 @@ export const useStore = create<HGState>()(
             const position = findArchitecturalPosition(s.home, inst)
             if (position) inst.position = position
           }
-          set({ furniture: [...s.furniture, inst], selectedId: inst.id })
+          set({
+            furniture: [...s.furniture, inst],
+            selectedId: inst.id,
+            coins: s.coins - price,
+            ...unlockPatch(s, def.id, price),
+          })
         },
 
         removeFurniture: (id) => {
@@ -901,6 +1029,10 @@ export const useStore = create<HGState>()(
           const s = get()
           const src = s.furniture.find((f) => f.id === id)
           if (!src) return
+          const def = getModel(src.modelId)
+          if (!def) return
+          const price = modelPrice(def)
+          if (!spend(`复制 ${def.name}`, price)) return
           const room = roomById(s.home, src.roomId)
           if (!room) return
           const copy: FurnitureInstance = {
@@ -917,7 +1049,12 @@ export const useStore = create<HGState>()(
             room.rect.w,
             room.rect.d,
           )
-          set({ furniture: [...s.furniture, copy], selectedId: copy.id })
+          set({
+            furniture: [...s.furniture, copy],
+            selectedId: copy.id,
+            coins: s.coins - price,
+            ...unlockPatch(s, def.id, price),
+          })
         },
 
         swapModel: (id, newModelId) => {
@@ -925,6 +1062,8 @@ export const useStore = create<HGState>()(
           if (!def) return
           const s = get()
           if (!s.furniture.some((f) => f.id === id)) return
+          const price = modelPrice(def)
+          if (!spend(`换成 ${def.name}`, price)) return
           set({
             furniture: s.furniture.map((f) =>
               f.id === id
@@ -935,6 +1074,8 @@ export const useStore = create<HGState>()(
                 : f,
             ),
             lastSwapId: newModelId,
+            coins: s.coins - price,
+            ...unlockPatch(s, def.id, price),
           })
         },
 
@@ -1024,7 +1165,64 @@ export const useStore = create<HGState>()(
           })
         },
 
-        select: (id) => set({ selectedId: id }),
+        select: (id) => set({ selectedId: id, selectedWall: null }),
+
+        collectIncome: (now = Date.now()) => {
+          const s = get()
+          const amount = accruedIncome(incomePerMinute(s.home, s.furniture), now - s.lastCollectAt)
+          if (amount <= 0) return 0
+          rawSet({ coins: s.coins + amount, lastCollectAt: now })
+          return amount
+        },
+
+        claimDaily: (now = Date.now()) => {
+          const s = get()
+          const today = localDayKey(now)
+          if (s.lastDailyDay === today) return 0
+          const streak = s.lastDailyDay === previousDayKey(now) ? s.dailyStreak + 1 : 1
+          const amount = dailyReward(streak)
+          rawSet({ coins: s.coins + amount, lastDailyDay: today, dailyStreak: streak })
+          return amount
+        },
+
+        storeFurniture: (id) => {
+          const s = get()
+          const item = s.furniture.find((f) => f.id === id)
+          if (!item) return
+          set({
+            furniture: s.furniture.filter((f) => f.id !== id),
+            storage: [...s.storage, item],
+            selectedId: s.selectedId === id ? null : s.selectedId,
+          })
+        },
+
+        placeFromStorage: (id, roomId) => {
+          const s = get()
+          const item = s.storage.find((f) => f.id === id)
+          if (!item) return
+          const target =
+            roomById(s.home, roomId ?? item.roomId) ??
+            roomById(s.home, s.activeRoomId) ??
+            s.home.rooms[0]
+          if (!target) return
+          const inst: FurnitureInstance = { ...item, roomId: target.id }
+          inst.position = s.home.architecture
+            ? item.position
+            : clampedPosition(inst, item.position[0], item.position[1], target.rect.w, target.rect.d)
+          if (s.home.architecture && !architecturalFurnitureFits(s.home, inst)) {
+            const position = findArchitecturalPosition(s.home, inst)
+            if (!position) {
+              rawSet({ structureNotice: '没有可摆放位置 No free spot on usable floor' })
+              return
+            }
+            inst.position = position
+          }
+          set({
+            storage: s.storage.filter((f) => f.id !== id),
+            furniture: [...s.furniture, inst],
+            selectedId: inst.id,
+          })
+        },
 
         addUpload: (def) => {
           registerUpload(def)
@@ -1040,12 +1238,13 @@ export const useStore = create<HGState>()(
           history.clear()
           unregisterUpload(id)
           const removedIds = new Set(
-            s.furniture.filter((f) => f.modelId === id).map((f) => f.id),
+            [...s.furniture, ...s.storage].filter((f) => f.modelId === id).map((f) => f.id),
           )
           rawSet({
             ...history.flags(),
             uploads: s.uploads.filter((u) => u.id !== id),
             furniture: s.furniture.filter((f) => f.modelId !== id),
+            storage: s.storage.filter((f) => f.modelId !== id),
             selectedId: s.selectedId && removedIds.has(s.selectedId) ? null : s.selectedId,
           })
         },
@@ -1069,6 +1268,12 @@ export const useStore = create<HGState>()(
         furniture: s.furniture,
         uploads: s.uploads,
         planImageKey: s.planImageKey,
+        coins: s.coins,
+        unlocked: s.unlocked,
+        storage: s.storage,
+        lastCollectAt: s.lastCollectAt,
+        lastDailyDay: s.lastDailyDay,
+        dailyStreak: s.dailyStreak,
       }),
       migrate: (persisted, version): Persisted => {
         // v1 → v2: same HomeDef shape (single room in an array); the only new

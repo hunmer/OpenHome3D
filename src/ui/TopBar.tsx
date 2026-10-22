@@ -4,6 +4,7 @@ import { useAiTask } from '../state/aiTask'
 import { useStore } from '../state/store'
 import { useUI } from './uiStore'
 import { Checkbox, IconButton } from './components'
+import CoinWallet from './CoinWallet'
 import EditHistory from './EditHistory'
 
 const S = {
@@ -150,8 +151,10 @@ export default function TopBar() {
   return (
     <div className="topbar">
       <div className="tb-right">
-        {/* one merged camera bar: view presets · pan mode · projection · AI render */}
+        {/* one merged camera bar: coins · view presets · pan mode · projection · AI render */}
         <div className="cam-bar">
+          <CoinWallet />
+          <span className="cam-sep" />
           <EditHistory />
           <span className="cam-sep" />
           {VIEWS.map((v) => (

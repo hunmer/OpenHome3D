@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { del } from 'idb-keyval'
 import { useStore } from '../../state/store'
@@ -9,12 +9,13 @@ import {
   type FurnitureType,
   type ModelDef,
 } from '../../models/registry'
+import { modelPrice, ownedModelIds } from '../../state/economy'
 import { PARAMETRIC_COMPONENTS } from '../../models/parametric/index'
 import { matchesModelSearch } from '../../models/search'
 import { MODEL_BLOB_KEY } from '../../three/runtime'
 import { evictThumbnail, getThumbnail } from '../../lib/thumbnails'
 import { useUI } from '../uiStore'
-import { Chip, GhostButton, IconButton, useInView } from '../components'
+import { Chip, CoinIcon, GhostButton, IconButton, PrimaryButton, useInView } from '../components'
 import { BRAND_LABELS, TYPE_LABELS } from '../labels'
 
 const BRANDS: Brand[] = ['BUILT-IN', 'KENNEY', 'KAYKIT', 'MY UPLOADS']
@@ -87,8 +88,8 @@ function requestParamThumb(def: ModelDef): Promise<string> {
   })
 }
 
-/** Mounted once inside ModelBrowser; invisible. */
-function ParamThumbWorker() {
+/** Mounted once inside ModelBrowser; invisible. Also reused by the storage box. */
+export function ParamThumbWorker() {
   const [job, setJob] = useState<ParamJob | null>(null)
 
   // kick: pick up the next queued job when idle
@@ -140,7 +141,7 @@ function ParamThumbWorker() {
 }
 
 /** Parametric (built-in) thumbnail: data URL from the shared worker canvas. */
-const ParamThumb = memo(function ParamThumb({ def }: { def: ModelDef }) {
+export const ParamThumb = memo(function ParamThumb({ def }: { def: ModelDef }) {
   const [url, setUrl] = useState(() => paramThumbCache.get(def.id) ?? null)
   useEffect(() => {
     if (url) return
@@ -156,7 +157,7 @@ const ParamThumb = memo(function ParamThumb({ def }: { def: ModelDef }) {
 })
 
 /** GLB/upload thumbnail: data URL from the offscreen vanilla-three renderer. */
-function GlbThumb({ def }: { def: ModelDef }) {
+export function GlbThumb({ def }: { def: ModelDef }) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     let ok = true
@@ -174,12 +175,18 @@ function Card({
   def,
   mode,
   current,
+  price,
+  owned,
   onPick,
   onDelete,
 }: {
   def: ModelDef
   mode: 'swap' | 'add'
   current: boolean
+  /** Placement price in coins (0 = free, uploads). */
+  price: number
+  /** In the ownership catalog: auto-layout may place it. */
+  owned: boolean
   onPick: () => void
   onDelete?: () => void
 }) {
@@ -198,7 +205,17 @@ function Card({
       <div className="card-thumb" ref={ref}>
         {inView && (def.kind === 'parametric' ? <ParamThumb def={def} /> : <GlbThumb def={def} />)}
       </div>
-      <div className="card-name">{def.name}</div>
+      <div className="card-name">
+        {def.name}
+        {owned && (
+          <span className="card-owned" title="已收录：自动布置可用 In catalog: auto-layout can use it">
+            ✓
+          </span>
+        )}
+      </div>
+      <span className={`card-price${price === 0 ? ' free' : ''}`} title={price === 0 ? '免费摆放 Free to place' : `摆放需 ${price} 金币 Place for ${price} coins`}>
+        {price === 0 ? '免费 free' : <><CoinIcon size={10} /> {price}</>}
+      </span>
       {mode === 'swap' && current && <span className="card-badge">✓</span>}
       {onDelete && (
         <button
@@ -226,11 +243,17 @@ export default function ModelBrowser({ mode }: { mode: 'swap' | 'add' }) {
   const swapModel = useStore((s) => s.swapModel)
   const addFurniture = useStore((s) => s.addFurniture)
   const removeUpload = useStore((s) => s.removeUpload)
+  const coins = useStore((s) => s.coins)
+  const unlocked = useStore((s) => s.unlocked)
+  const furniture = useStore((s) => s.furniture)
+  const storage = useStore((s) => s.storage)
   void uploads
 
   const [search, setSearch] = useState('')
   const [brand, setBrand] = useState<BrandFilter>(() => useUI.getState().forcedBrand ?? 'ALL')
   const [type, setType] = useState<TypeFilter>('ALL')
+  /** Paid pick awaiting confirmation in the bottom bar. */
+  const [pending, setPending] = useState<ModelDef | null>(null)
 
   // the browser reopens with MY UPLOADS active after an upload — consume that once
   useEffect(() => {
@@ -238,6 +261,10 @@ export default function ModelBrowser({ mode }: { mode: 'swap' | 'add' }) {
   }, [])
 
   const models = allModels()
+  const owned = useMemo(
+    () => ownedModelIds({ unlocked, furniture, storage, uploads }),
+    [unlocked, furniture, storage, uploads],
+  )
   const matchSearch = (m: ModelDef) => matchesModelSearch(m, search)
   const brandFiltered = models.filter((m) => (brand === 'ALL' || m.brand === brand) && matchSearch(m))
   const visible = brandFiltered.filter((m) => type === 'ALL' || m.type === type)
@@ -251,17 +278,38 @@ export default function ModelBrowser({ mode }: { mode: 'swap' | 'add' }) {
     mode === 'swap' ? s.furniture.find((f) => f.id === s.selectedId)?.modelId : undefined,
   )
 
-  const pick = (def: ModelDef) => {
+  const place = (def: ModelDef, price: number) => {
     if (mode === 'swap') {
       if (selectedId) {
         swapModel(selectedId, def.id)
-        pushToast(`已换模 Swapped for ${def.name}`)
+        pushToast(
+          price > 0
+            ? `已花费 ${price} 金币换模 Swapped for ${def.name}`
+            : `已换模 Swapped for ${def.name}`,
+        )
       }
     } else {
       addFurniture(def.id)
-      pushToast('已添加 — 拖拽放置 Added, drag to place')
+      pushToast(
+        price > 0
+          ? `已花费 ${price} 金币摆放 — 拖拽放置 Spent ${price} coins — drag to place`
+          : '已添加 — 拖拽放置 Added, drag to place',
+      )
     }
     closeModal()
+  }
+
+  const pick = (def: ModelDef) => {
+    if (modelPrice(def) === 0) {
+      place(def, 0)
+      return
+    }
+    setPending(def)
+  }
+
+  const confirmPending = () => {
+    if (!pending) return
+    place(pending, modelPrice(pending))
   }
 
   const deleteUpload = (def: ModelDef) => {
@@ -270,6 +318,9 @@ export default function ModelBrowser({ mode }: { mode: 'swap' | 'add' }) {
     evictThumbnail(def.id)
     pushToast(`已移除 Removed: ${def.name}`)
   }
+
+  const pendingPrice = pending ? modelPrice(pending) : 0
+  const affordable = pendingPrice <= coins
 
   return (
     <div className="modal-overlay">
@@ -330,6 +381,8 @@ export default function ModelBrowser({ mode }: { mode: 'swap' | 'add' }) {
               def={def}
               mode={mode}
               current={def.id === currentModelId}
+              price={modelPrice(def)}
+              owned={owned.has(def.id)}
               onPick={() => pick(def)}
               onDelete={def.kind === 'upload' ? () => deleteUpload(def) : undefined}
             />
@@ -340,6 +393,22 @@ export default function ModelBrowser({ mode }: { mode: 'swap' | 'add' }) {
             </p>
           )}
         </div>
+
+        {pending && (
+          <div className="mb-confirm">
+            <CoinIcon />
+            <span className="mb-confirm-text">
+              {mode === 'swap' ? '换成' : '摆放'}「{pending.name}」· {pendingPrice} 金币
+              {owned.has(pending.id) ? '' : ' · 首次购买收录 Catalog on first buy'}
+            </span>
+            <GhostButton onClick={() => setPending(null)}>取消 Cancel</GhostButton>
+            <PrimaryButton disabled={!affordable} onClick={confirmPending}>
+              {affordable
+                ? `花费 ${pendingPrice} ${mode === 'swap' ? '更换' : '摆放'} Spend`
+                : `还差 ${pendingPrice - coins} 金币 Need more`}
+            </PrimaryButton>
+          </div>
+        )}
       </div>
     </div>
   )

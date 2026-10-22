@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useUI } from './uiStore'
 import AIRender from './modals/AIRender'
 import ModelBrowser from './modals/ModelBrowser'
+import StorageBox from './modals/StorageBox'
 import UploadModel from './modals/UploadModel'
 
 /** Renders the active modal from uiStore (upload nests above the model browser). */
@@ -26,6 +27,7 @@ export default function Modals() {
       {(active.kind === 'swap' || active.kind === 'add') && <ModelBrowser mode={active.kind} />}
       {active.kind === 'upload' && <UploadModel />}
       {active.kind === 'ai' && <AIRender />}
+      {active.kind === 'storage' && <StorageBox />}
     </>
   )
 }

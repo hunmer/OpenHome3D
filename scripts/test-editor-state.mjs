@@ -36,8 +36,13 @@ const vite = await createServer({
 try {
   const { useStore: store } = await vite.ssrLoadModule('/src/state/store.ts')
   const { roomsOverlap } = await vite.ssrLoadModule('/src/state/home.ts')
+  const { allModels, getModel } = await vite.ssrLoadModule('/src/models/registry.ts')
+  const eco = await vite.ssrLoadModule('/src/state/economy.ts')
   const imageStorage = await vite.ssrLoadModule('/src/lib/planImage.ts')
   const s = () => store.getState()
+  // paid actions (rooms/placement) run against a padded wallet; economy rules
+  // are asserted separately in the dedicated block below
+  store.setState({ coins: 1_000_000 })
   s().newRoom()
   const originalId = s().activeRoomId
   s().setRoomRect(originalId, { ...s().home.rooms[0].rect, d: 8 })
@@ -203,7 +208,112 @@ try {
   await hydrationDuringReset
   assert.equal(s().planImageUrl, imageB, 'hydration restores the original image after reset and undo')
   assert.equal(await imageStorage.loadPlanImage(), imageB, 'the restored image must survive a later page reload')
-  console.log('editor-state OK: overlap, reset, undo/redo, gesture grouping, no-op redo preservation, regeneration, delayed image hydration and persistence')
+
+  // ---- 养成经济 Economy: pure rules, wallet gating, catalog, storage, claims ----
+  assert.equal(eco.dailyReward(1), 100)
+  assert.equal(eco.dailyReward(2), 120)
+  assert.equal(eco.dailyReward(99), 200, 'daily reward caps out')
+  assert.equal(eco.accruedIncome(10, 60_000), 10)
+  assert.equal(eco.accruedIncome(10, 100 * 60 * 60_000), 10 * eco.INCOME_CAP_MINUTES, 'offline accrual caps')
+  assert.equal(eco.expansionCost(4, 4, 6, 6), 200)
+  assert.equal(eco.expansionCost(6, 6, 4, 4), 0, 'shrinking is free')
+  assert.equal(eco.incomePerMinute({ rooms: [{}, {}] }, [{ modelId: 'a' }, { modelId: 'a' }, { modelId: 'b' }]), 6, 'duplicates do not farm income')
+  assert.equal(eco.modelPrice(getModel('builtin:sofa')), 125, 'built-ins are half price')
+  const glb = allModels().find(m => m.brand === 'KENNEY')
+  assert.ok(eco.modelPrice(glb) > 0)
+
+  // wallet gating: a broke player cannot place, unlock or grow the home
+  s().newRoom()
+  store.setState({ coins: 0, unlocked: [] })
+  const furnitureBeforeReject = s().furniture
+  s().addFurniture(glb.id)
+  assert.equal(s().furniture, furnitureBeforeReject, 'insufficient coins reject placement')
+  assert.ok(s().structureNotice.includes('金币不足'), 'rejection explains the shortfall')
+  assert.equal(s().unlocked.includes(glb.id), false)
+
+  // paid placement deducts, unlocks the catalog entry and is final on undo
+  store.setState({ coins: eco.modelPrice(glb), structureNotice: null })
+  s().addFurniture(glb.id)
+  assert.ok(s().furniture.some(f => f.modelId === glb.id))
+  assert.equal(s().coins, 0)
+  assert.ok(s().unlocked.includes(glb.id), 'first paid placement unlocks the model')
+  store.setState({ coins: 5_000 })
+  s().addFurniture(glb.id)
+  const coinsAfterSecondBuy = s().coins
+  s().undo()
+  assert.equal(s().coins, coinsAfterSecondBuy, 'undo removes furniture without refunding')
+  assert.ok(s().furniture.some(f => f.modelId === glb.id), 'the first paid item survives the undo')
+
+  // idle income and daily check-in are wallet writes outside history
+  store.setState({ lastCollectAt: Date.now() - 60_000 })
+  assert.ok(s().collectIncome() >= 1, 'a minute of income is collectable')
+  assert.equal(s().collectIncome(), 0, 'nothing accrues after collecting')
+  store.setState({ lastDailyDay: null, dailyStreak: 0 })
+  assert.equal(s().claimDaily(), 100)
+  assert.equal(s().claimDaily(), 0, 'the daily claim is once per day')
+  store.setState({ lastDailyDay: eco.previousDayKey(), dailyStreak: 3 })
+  assert.equal(s().claimDaily(), 160, 'streaks grow the daily reward')
+
+  // storage round-trip is ordinary scene history (furniture + storage symmetric)
+  store.setState({ coins: 5_000 })
+  s().addFurniture('builtin:sofa')
+  const coinsAroundStorage = s().coins // sofa placement paid; the stash/place round-trip below must not
+  const storedTarget = s().selectedId
+  s().storeFurniture(storedTarget)
+  assert.equal(s().furniture.some(f => f.id === storedTarget), false)
+  assert.equal(s().storage.length, 1)
+  s().undo()
+  assert.ok(s().furniture.some(f => f.id === storedTarget), 'undo restores a stored item')
+  assert.equal(s().storage.length, 0, 'undo restores the storage list too')
+  s().redo()
+  assert.equal(s().storage.length, 1)
+  s().placeFromStorage(s().storage[0].id)
+  assert.ok(s().furniture.some(f => f.id === storedTarget))
+  assert.equal(s().storage.length, 0)
+  assert.equal(s().coins, coinsAroundStorage, 'storing and placing back are free')
+
+  // auto-layout draws only from the ownership catalog
+  store.setState({ furniture: [], storage: [], unlocked: [] })
+  const coinsBeforeRoom = s().coins
+  s().addRoom('bedroom')
+  const added = s().home.rooms.find(r => r.id === s().activeRoomId)
+  assert.ok(added)
+  assert.equal(coinsBeforeRoom - s().coins, eco.roomAreaCost(added.rect.w, added.rect.d), 'a new room costs its area')
+  assert.ok(s().furniture.length > 0, 'bedroom still lays out with built-ins')
+  assert.ok(s().furniture.every(f => getModel(f.modelId).kind === 'parametric'), 'no GLB outside the catalog is generated')
+  const owned = eco.ownedModelIds(s())
+  assert.ok(s().furniture.every(f => owned.has(f.modelId)), 'generated models stay inside the catalog')
+
+  // shrinking is free; growth charges the added area
+  const first = s().home.rooms[0]
+  s().selectRoom(first.id)
+  const coinsBeforeShrink = s().coins
+  s().setRoomRect(first.id, { ...first.rect, w: Math.max(1.5, first.rect.w - 1) })
+  assert.equal(s().coins, coinsBeforeShrink, 'shrinking a room is free')
+  const shrunk = s().home.rooms.find(r => r.id === first.id)
+  s().setRoomRect(first.id, { ...shrunk.rect, w: shrunk.rect.w + 1 })
+  assert.equal(
+    coinsBeforeShrink - s().coins,
+    eco.expansionCost(shrunk.rect.w, shrunk.rect.d, shrunk.rect.w + 1, shrunk.rect.d),
+    'growing a room charges the added area',
+  )
+
+  // structure selection: clicking a wall (WallStrip) is session state, mutually exclusive with openings
+  const wallRoom = s().home.rooms[0]
+  s().selectRoom(wallRoom.id)
+  s().selectWall({ roomId: wallRoom.id, side: 's' })
+  assert.equal(s().selectedWall?.side, 's')
+  const openingsBefore = s().home.openings.length
+  s().addOpening({ kind: 'door', a: wallRoom.id, b: 'exterior', side: 's', offset: 1, width: 0.9 })
+  assert.equal(s().home.openings.length, openingsBefore + 1)
+  s().selectOpening(s().home.openings.at(-1).id)
+  assert.equal(s().selectedWall, null, 'selecting an opening clears the wall selection')
+  s().selectWall({ roomId: wallRoom.id, side: 's' })
+  assert.equal(s().selectedOpeningId, null, 'selecting a wall clears the opening selection')
+  assert.equal(s().selectedId, null, 'selecting a wall clears the furniture selection')
+  s().selectWall(null)
+
+  console.log('editor-state OK: overlap, reset, undo/redo, gesture grouping, no-op redo preservation, regeneration, delayed image hydration and persistence, economy (pricing, wallet gating, catalog, storage, income and daily claims), wall/opening selection')
 } finally {
   await vite.close()
 }

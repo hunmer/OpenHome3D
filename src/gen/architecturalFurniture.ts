@@ -135,11 +135,11 @@ function matchFurniture(source: RecognizedFurniture, room: RoomDef, home: HomeDe
 }
 
 /** Existing rectangular rules supply candidates only; the polygon is the final placement authority. */
-export function generateArchitecturalRoom(home: HomeDef, room: RoomDef, seed: string, extras: number, preserved: FurnitureInstance[] = [], decorOnly = false): FurnitureInstance[] {
+export function generateArchitecturalRoom(home: HomeDef, room: RoomDef, seed: string, extras: number, preserved: FurnitureInstance[] = [], decorOnly = false, models: ModelDef[] = allModels()): FurnitureInstance[] {
   const space = home.architecture?.spaces.find(s => s.id === room.id)
   if (!space || !allowsFurniture(space.kind)) return []
   const candidates = generateLayout({ roomType: room.type, seed: `${seed}@${room.id}`, salt: room.salt,
-    width: room.rect.w, depth: room.rect.d, extras, models: allModels(), preserved, decorOnly })
+    width: room.rect.w, depth: room.rect.d, extras, models, preserved, decorOnly })
   const ids = new Set(preserved.map(item => item.id))
   return candidates.flatMap(item => {
     let id = `${room.id}:${item.id}`
@@ -150,7 +150,7 @@ export function generateArchitecturalRoom(home: HomeDef, room: RoomDef, seed: st
   })
 }
 
-export function importArchitecturalFurniture(home: HomeDef, seed: string, extras: number): { furniture: FurnitureInstance[]; warnings: string[] } {
+export function importArchitecturalFurniture(home: HomeDef, seed: string, extras: number, models: ModelDef[] = allModels()): { furniture: FurnitureInstance[]; warnings: string[] } {
   const plan = home.architecture!
   const warnings = [...plan.warnings]
   const furniture = home.rooms.flatMap(room => {
@@ -163,7 +163,7 @@ export function importArchitecturalFurniture(home: HomeDef, seed: string, extras
       return instance ? [instance] : []
     })
     if (matched.length) return matched
-    const generated = generateArchitecturalRoom(home, room, seed, extras)
+    const generated = generateArchitecturalRoom(home, room, seed, extras, [], false, models)
     warnings.push(`${room.name} 未匹配到识别家具，已生成 ${generated.length} 件可用摆放 / Generated fallback furniture`)
     return generated
   })

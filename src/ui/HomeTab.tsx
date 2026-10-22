@@ -4,33 +4,13 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useStore } from '../state/store'
 import { useUI } from './uiStore'
 import { HOME_TEMPLATES } from '../gen/templates'
-import { ROOM_TYPES, getRoomType } from '../gen/roomTypes'
+import { ROOM_TYPES, getRoomType, typeDefaults } from '../gen/roomTypes'
+import { rngFrom } from '../lib/prng'
+import { roomAreaCost } from '../state/economy'
 import { planJsonToHome, type ImportReport } from '../gen/importPlan'
 import { aiStatus, cancelAiTask, downscaleImageToPng, understandPlan } from '../lib/ai'
-import {
-  roomById,
-  openingIntervals,
-  sharedSpan,
-  sideSpan,
-  type HomeDef,
-  type Opening,
-  type RoomDef,
-  type Side,
-} from '../state/home'
-import { OPENING_KIND_LABELS, openingKindLabel, SIDE_LABELS } from './labels'
-import { Checkbox, GhostButton, IconButton, NumberInput, PrimaryButton, Row, Section, Slider } from './components'
-
-const SIDES: Side[] = ['n', 's', 'e', 'w']
-const OPPOSITE: Record<Side, Side> = { n: 's', s: 'n', e: 'w', w: 'e' }
-
-// mini cards follow the project's card DNA: 2px ink border, no radius
-const cardStyle: CSSProperties = {
-  border: '2px solid var(--ink)',
-  borderRadius: 0,
-  background: '#fff',
-  padding: '6px 8px',
-  marginTop: 6,
-}
+import { roomById, type HomeDef } from '../state/home'
+import { CoinIcon, GhostButton, NumberInput, PrimaryButton } from './components'
 
 const miniBtnStyle: CSSProperties = {
   padding: '2px 8px',
@@ -266,7 +246,7 @@ function ImportRow() {
     <div style={{ padding: '3px 0' }}>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg" style={{ display: 'none' }}
         onChange={(e) => void onFile(e.target.files?.[0])}/>
-      {import.meta.env.PROD && <p className="caption">本机运行可用：npm run dev + codex login<br />AI import is available in the local dev server.</p>}
+      {import.meta.env.PROD && <p className="caption">AI 识别仅限本机运行 AI import runs in the local dev server</p>}
       <div className="btn-row"><GhostButton style={miniBtnStyle} disabled={import.meta.env.PROD} onClick={() => fileRef.current?.click()}>
         导入户型图 Import plan
       </GhostButton></div>
@@ -279,174 +259,32 @@ function ImportRow() {
           <span className="plan-recognition-spinner" aria-hidden="true"/>
           <p role="status">{phase==='queued'?'排队中 Queued…':'正在识别户型 Recognizing…'}</p>
           <p className="plan-recognition-time">{phase==='queued'?'上一任务已运行':'已等待'} {elapsed} 秒</p>
-          <p className="caption">{phase==='queued'?'正在等待上一 AI 任务结束，随后自动识别。Waiting for the previous task.':'正在读取墙线、门窗和空间位置，复杂户型可能需要几分钟。Reading walls, openings and rooms; complex plans can take several minutes.'}</p>
-          <p className="caption">请在此等待，完成后自动进入原图与解析核对。可随时放弃，当前方案保持不变。Review opens automatically when ready. Cancel to keep your current plan.</p>
         </div>
       </PlanDialog>}
     </div>
   )
 }
 
-/** One opening owned by the active room: kind select / offset slider / width / delete. */
-function OpeningCard({ room, opening }: { room: RoomDef; opening: Opening }) {
-  const home = useStore((s) => s.home)
-  const updateOpening = useStore((s) => s.updateOpening)
-  const removeOpening = useStore((s) => s.removeOpening)
-  const selected = useStore((s) => s.selectedOpeningId === opening.id)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: 'nearest' })
-  }, [selected])
-  const intervals = openingIntervals(home, opening)
-  const [from, to] = intervals.find(([lo, hi]) => opening.offset >= lo && opening.offset <= hi) ?? [0, sideSpan(room, opening.side).length]
-  const span = to - from
-  const canGap = opening.kind === 'open'
-  return (
-    <div ref={ref} style={selected ? { ...cardStyle, outline: '2px solid var(--select)' } : cardStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <select
-          className="input"
-          style={{ flex: 1, minWidth: 0 }}
-          value={opening.kind}
-          onChange={(e) => {
-            const kind = e.target.value as Opening['kind']
-            // fullHeight only means anything for 'open' — drop the stale flag otherwise
-            updateOpening(opening.id, kind === 'open' ? { kind } : { kind, fullHeight: undefined })
-          }}
-        >
-          {(['door', 'open', 'window'] as const).map((k) => (
-            <option key={k} value={k}>
-              {OPENING_KIND_LABELS[k]}
-            </option>
-          ))}
-        </select>
-        <span className="caption">{SIDE_LABELS[opening.side]}</span>
-        <IconButton title="删除 Delete" onClick={() => removeOpening(opening.id)}>
-          ×
-        </IconButton>
-      </div>
-      {canGap && (
-        <div style={{ marginTop: 4 }}>
-          <Checkbox
-            label={
-              opening.b === 'exterior'
-                ? '阳台护栏 Balcony parapet'
-                : '通高打通 Full-height opening'
-            }
-            checked={!!opening.fullHeight}
-            onChange={(v) => updateOpening(opening.id, { fullHeight: v })}
-          />
-        </div>
-      )}
-      <Slider
-        label="位置 Offset"
-        value={opening.offset}
-        min={from + opening.width / 2}
-        max={Math.max(from + opening.width / 2, to - opening.width / 2)}
-        step={0.05}
-        display={`${opening.offset.toFixed(2)} m`}
-        onChange={(v) => updateOpening(opening.id, { offset: v })}
-      />
-      <NumberInput
-        label="宽度 Width"
-        value={opening.width}
-        min={0.3}
-        max={opening.fullHeight ? span : Math.min(span, 2.4)}
-        step={0.05}
-        unit="m"
-        onCommit={(v) => updateOpening(opening.id, { width: v })}
-      />
-    </div>
-  )
-}
-
-/** Read-only card for an opening declared by a neighbor room on a shared wall. */
-function MirroredCard({ home, opening }: { home: HomeDef; opening: Opening }) {
-  const selected = useStore((s) => s.selectedOpeningId === opening.id)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: 'nearest' })
-  }, [selected])
-  return (
-    <div
-      ref={ref}
-      style={{
-        ...cardStyle,
-        opacity: 0.65,
-        ...(selected ? { outline: '2px solid var(--select)' } : null),
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span>{openingKindLabel(opening)}</span>
-        <span className="caption">{SIDE_LABELS[OPPOSITE[opening.side]]}</span>
-        <span style={{ flex: 1 }} />
-        <span className="caption">{opening.width.toFixed(2)} m</span>
-      </div>
-      <div className="caption">
-        由{roomById(home, opening.a)?.name ?? opening.a}声明 Declared by{' '}
-        {roomById(home, opening.a)?.name ?? opening.a}
-      </div>
-    </div>
-  )
-}
-
-/** 整宅 Home tab: templates, plan import, wall height, room list, and the active room's openings. */
+/** 整宅 Home tab: templates, plan import, wall height, and the room list.
+ *  Openings are edited by clicking walls/markers in the structure editor —
+ *  see the StructurePill in the status bar. */
 export default function HomeTab() {
   const home = useStore((s) => s.home)
   const activeRoomId = useStore((s) => s.activeRoomId)
   const selectRoom = useStore((s) => s.selectRoom)
   const addRoom = useStore((s) => s.addRoom)
   const removeRoom = useStore((s) => s.removeRoom)
-  const addOpening = useStore((s) => s.addOpening)
   const wallHeight = useStore((s) => s.wallHeight)
   const setStructure = useStore((s) => s.setStructure)
+  const seed = useStore((s) => s.seed)
+  const coins = useStore((s) => s.coins)
   const [newType, setNewType] = useState('bedroom')
 
   const room = roomById(home, activeRoomId) ?? home.rooms[0]
-  const own = room ? home.openings.filter((o) => o.a === room.id) : []
-  const mirrored = room ? home.openings.filter((o) => o.b === room.id) : []
-
-  const addOnSide = (side: Side, kind: 'door' | 'window' | 'gap') => {
-    if (!room) return
-    const neighbor = home.rooms.find((r) => r.id !== room.id && sharedSpan(room, r)?.side === side)
-    if (kind === 'gap') {
-      // interior side: 打通 — full-height opening across the shared interval
-      // (no wall there). exterior side: 阳台开口 — the wall across the span
-      // becomes a railing-height parapet.
-      const sh = neighbor && sharedSpan(room, neighbor)
-      if (neighbor && sh && sh.side === side) {
-        addOpening({
-          kind: 'open',
-          a: room.id,
-          b: neighbor.id,
-          side,
-          offset: (sh.from + sh.to) / 2,
-          width: sh.to - sh.from,
-          fullHeight: true,
-        })
-      } else if (!neighbor) {
-        const len = sideSpan(room, side).length
-        addOpening({
-          kind: 'open',
-          a: room.id,
-          b: 'exterior',
-          side,
-          offset: len / 2,
-          width: len,
-          fullHeight: true,
-        })
-      }
-      return
-    }
-    addOpening({
-      kind,
-      a: room.id,
-      b: kind === 'window' ? 'exterior' : (neighbor?.id ?? 'exterior'),
-      side,
-      offset: sideSpan(room, side).length / 2,
-      width: kind === 'window' ? 1.2 : 0.9,
-    })
-  }
+  // mirror addRoom's sizing: type-default width × the active room's depth
+  const addCost = room
+    ? roomAreaCost(typeDefaults(newType, rngFrom(`${seed}:room:${newType}`)).width, room.rect.d)
+    : 0
 
   if (home.architecture) return <><TemplateRow/><ImportRow/><ArchitecturePanel/></>
 
@@ -506,7 +344,13 @@ export default function HomeTab() {
           </span>
         </div>
         <div className="btn-row">
-          <GhostButton onClick={() => addRoom(newType)}>+ 添加房间 Add room</GhostButton>
+          <GhostButton
+            disabled={coins < addCost}
+            title={coins < addCost ? `金币不足：还需 ${addCost - coins} Not enough coins` : undefined}
+            onClick={() => addRoom(newType)}
+          >
+            + 添加房间 Add room · {addCost} <CoinIcon size={10} />
+          </GhostButton>
         </div>
         <div className="btn-row">
           <GhostButton
@@ -520,52 +364,6 @@ export default function HomeTab() {
           </GhostButton>
         </div>
       </div>
-
-      {room && (
-        <Section title="门窗 Openings" collapsible right={`· ${room.name}`}>
-          {SIDES.map((side) => {
-            const hasNeighbor = home.rooms.some(
-              (r) => r.id !== room.id && sharedSpan(room, r)?.side === side
-            )
-            return (
-              <Row key={side} label={SIDE_LABELS[side]}>
-                {/* inner wrapper: three bilingual mini buttons don't fit one
-                    line, so they wrap instead of spilling past the sidebar */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
-                  <GhostButton style={miniBtnStyle} onClick={() => addOnSide(side, 'door')}>
-                    + 门 Door
-                  </GhostButton>
-                  <GhostButton style={miniBtnStyle} onClick={() => addOnSide(side, 'window')}>
-                    + 窗 Window
-                  </GhostButton>
-                  {hasNeighbor ? (
-                    <GhostButton style={miniBtnStyle} onClick={() => addOnSide(side, 'gap')}>
-                      + 打通 Open up
-                    </GhostButton>
-                  ) : (
-                    <GhostButton
-                      style={miniBtnStyle}
-                      title="外墙变护栏半墙 Railing parapet instead of a full wall"
-                      onClick={() => addOnSide(side, 'gap')}
-                    >
-                      + 阳台 Balcony
-                    </GhostButton>
-                  )}
-                </div>
-              </Row>
-            )
-          })}
-          {own.map((o) => (
-            <OpeningCard key={o.id} room={room} opening={o} />
-          ))}
-          {mirrored.map((o) => (
-            <MirroredCard key={o.id} home={home} opening={o} />
-          ))}
-          {own.length === 0 && mirrored.length === 0 && (
-            <p className="hint">该房间还没有门窗 No openings on this room yet.</p>
-          )}
-        </Section>
-      )}
     </>
   )
 }

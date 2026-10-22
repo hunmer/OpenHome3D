@@ -2,7 +2,11 @@ import { create } from 'zustand'
 import type { Brand } from '../models/registry'
 
 /** Which modal is currently on top. `swap`/`add` = model browser, `upload` nests above it. */
-export type ActiveModal = { kind: 'swap' | 'add' } | { kind: 'upload' } | { kind: 'ai' }
+export type ActiveModal =
+  | { kind: 'swap' | 'add' }
+  | { kind: 'upload' }
+  | { kind: 'ai' }
+  | { kind: 'storage' }
 
 export interface Toast {
   id: number
