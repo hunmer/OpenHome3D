@@ -87,7 +87,7 @@ IndexedDB 键约定：
 - 图标使用内联 SVG、strokeWidth 2、圆角线帽；字符图标加粗。文案中文在前、English 在后，类型/品牌/参数标签集中在 `src/ui/labels.ts` 和 `src/models/registry.ts`，搜索别名在 `src/models/search.ts`。
 - 弹窗根节点带 `data-modal`，3D 和编辑历史快捷键据此忽略输入。输入控件保留原生文本编辑快捷键。
 - 侧栏为「方案 Plan」（整宅 Home / 房间 Room）与「家具 Furniture」两个可折叠 Section；RoomTab 定义在 `src/ui/Sidebar.tsx`。显示开关在 TopBar 下拉，工程保存/打开与轻量布局导出、GitHub 仓库和反馈入口在侧栏底部。**种子与捕捉网格只存在于 store**（`setSeed`/`moveGrid` 供脚本与吸附使用），状态栏不展示 SEED/网格等开发信息。
-- **门窗交互走 3D 选择**：结构编辑器（`HomeEditor`）为每条墙线渲染可点击墙条，点击设置会话态 `selectedWall{roomId,side}`（`selectWall`，与家具/门窗选择互斥、Escape/空点清除、进 SNAPSHOT_KEYS 但不持久化）；状态栏 `StructurePill` 据此提供 +门/+窗/+打通（外墙为阳台）与所选门窗的类型/宽度/位置/删除。HomeTab 不再常驻门窗列表（OpeningCard/MirroredCard 已删），注释性 caption 保持一行内。
+- **门窗交互走 3D 墙体点击**：`Home.tsx` 的每段真实墙体网格（含门扇/窗框，任意页签与视角，剖切隐藏的外墙除外）可点击，映射 `wallSide`（外墙用法线、内墙用固定坐标贴房间边）得到 `{roomId,side}`，写入会话态 `selectedWall`（`selectWall`，与家具/门窗选择互斥、Escape/空点清除、进 SNAPSHOT_KEYS 但不持久化，选中墙有蓝色描边高亮）；状态栏 `StructurePill` 据此提供 +门/+窗/+打通（外墙为阳台）与所选门窗的类型/宽度/位置/删除，`addOpening` 自动选中新开口。HomeTab 不再常驻门窗列表（OpeningCard/MirroredCard 已删），注释性 caption 保持一行内。
 - ≤720 px 使用默认关闭的覆盖式抽屉，顶栏可横滑、弹窗近全屏、AI 面板上下堆叠；移动样式集中在 `src/styles.css` 的媒体查询。桌面/移动侧栏滚动条有意隐藏，不加回。
 
 ## 本机 AI 中间件

@@ -3,9 +3,9 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { Edges } from '@react-three/drei'
 import { useStore } from '../state/store'
-import { homeAABB, type RoomDef } from '../state/home'
+import { homeAABB, type RoomDef, type Side } from '../state/home'
 import { deriveWalls, WALL_T, type WallSegment } from '../gen/walls'
-import { EDGE } from '../models/parametric/shared'
+import { EDGE, SELECT_EDGE } from '../models/parametric/shared'
 import { SHELL } from '../models/palette'
 import { toonGradientMap } from '../lib/toon'
 
@@ -15,23 +15,44 @@ const DOOR_H = 2.05
 const SLAB_H = 0.15
 const SLAB_OVERHANG = 0.25
 
+/** Which side of its room a wall segment faces (drives wall click → selectWall). */
+function wallSide(seg: WallSegment, room: RoomDef): Side | null {
+  if (seg.normal) {
+    if (seg.normal[1] < 0) return 'n'
+    if (seg.normal[1] > 0) return 's'
+    return seg.normal[0] < 0 ? 'w' : 'e'
+  }
+  // interior wall: its fixed coordinate lies on one of the room's edges
+  const { x, z, w, d } = room.rect
+  if (seg.axis === 'x')
+    return Math.abs(seg.from[1] - (z - d / 2)) < 1e-6 ? 'n' : Math.abs(seg.from[1] - (z + d / 2)) < 1e-6 ? 's' : null
+  return Math.abs(seg.from[0] - (x - w / 2)) < 1e-6 ? 'w' : Math.abs(seg.from[0] - (x + w / 2)) < 1e-6 ? 'e' : null
+}
+
 /** Standard toon shell mesh with cast/receive shadows and a dark outline. */
 function WallMesh({
   geometry,
   args,
   position,
   color = SHELL.wall,
+  highlight = false,
 }: {
   geometry?: THREE.BufferGeometry
   args?: [number, number, number]
   position: [number, number, number]
   color?: string
+  highlight?: boolean
 }) {
   return (
     <mesh castShadow receiveShadow geometry={geometry} position={position}>
       {args ? <boxGeometry args={args} /> : null}
-      <meshToonMaterial color={color} gradientMap={toonGradientMap()} />
-      <Edges threshold={20} lineWidth={1} color={EDGE} />
+      <meshToonMaterial
+        color={color}
+        gradientMap={toonGradientMap()}
+        emissive={highlight ? SELECT_EDGE : '#000000'}
+        emissiveIntensity={highlight ? 0.35 : 0}
+      />
+      <Edges threshold={20} lineWidth={1} color={highlight ? SELECT_EDGE : EDGE} />
     </mesh>
   )
 }
@@ -160,6 +181,7 @@ export default function Home() {
   const floorSlab = useStore((s) => s.floorSlab)
   const windowsOn = useStore((s) => s.windows)
   const doorLeaves = useStore((s) => s.doorLeaves)
+  const selectedWall = useStore((s) => s.selectedWall)
 
   const segments = useMemo(() => deriveWalls(home, wallHeight), [home, wallHeight])
   const aabb = useMemo(() => homeAABB(home), [home])
@@ -226,7 +248,7 @@ export default function Home() {
         ))
       )}
 
-      {/* wall segments */}
+      {/* wall segments: clicking a wall selects it for the status-bar opening editor */}
       {resolved.map(({ seg, doors, wins }, i) => {
         const dx = seg.to[0] - seg.from[0]
         const dz = seg.to[1] - seg.from[1]
@@ -236,6 +258,16 @@ export default function Home() {
         const off = seg.kind === 'ext' && seg.normal ? WALL_T / 2 : 0
         const px = seg.from[0] + (seg.normal?.[0] ?? 0) * off
         const pz = seg.from[1] + (seg.normal?.[1] ?? 0) * off
+        const segRoom = home.rooms.find((r) => r.id === seg.roomId)
+        const side = segRoom ? wallSide(seg, segRoom) : null
+        const highlighted =
+          !!selectedWall && !!side && selectedWall.roomId === seg.roomId && selectedWall.side === side
+        const pickWall = () => {
+          if (!segRoom || !side) return
+          const st = useStore.getState()
+          st.selectRoom(segRoom.id) // activates the declaring room first (clears selection)
+          st.selectWall({ roomId: segRoom.id, side })
+        }
         return (
           <group
             key={seg.key}
@@ -246,8 +278,13 @@ export default function Home() {
             }
             position={[px, 0, pz]}
             rotation-y={rotY}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              e.stopPropagation()
+              pickWall()
+            }}
           >
-            <WallMesh geometry={geoms[i]} position={[0, 0, 0]} />
+            <WallMesh geometry={geoms[i]} position={[0, 0, 0]} highlight={highlighted} />
 
             {/* door leaves, hinged at the gap start (kind 'open' has no leaf) */}
             {doorLeaves &&
