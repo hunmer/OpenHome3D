@@ -1051,6 +1051,74 @@ textarea.input:focus,
   font-size: 10px;
 }
 
+/* openings on the selected wall: click to edit, × to delete */
+.struct-pill .struct-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 300px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.struct-pill .struct-list::-webkit-scrollbar {
+  display: none;
+}
+
+.struct-pill .struct-empty {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.struct-opening {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  background: #fff;
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  white-space: nowrap;
+}
+
+.struct-opening:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.struct-opening-name {
+  border: none;
+  background: none;
+  padding: 2px 3px 2px 7px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.struct-opening-name:hover {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+.struct-opening-del {
+  border: none;
+  background: none;
+  padding: 0 5px 0 2px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.struct-opening-del:hover {
+  color: var(--coral);
+}
+
 .status-info {
   margin-left: auto;
   flex: none;
@@ -2106,6 +2174,10 @@ textarea.input:focus,
 
   .sel-pill {
     max-width: calc(100vw - 16px);
+  }
+
+  .struct-pill .struct-list {
+    max-width: 180px;
   }
 
   /* display popover anchors to the viewport right edge */

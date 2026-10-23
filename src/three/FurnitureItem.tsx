@@ -6,6 +6,7 @@ import { footprintOf, getModel, type FurnitureInstance } from '../models/registr
 import { PARAMETRIC_COMPONENTS } from '../models/parametric'
 import { SELECT_EDGE } from '../models/parametric/shared'
 import { useStore } from '../state/store'
+import { useUI } from '../ui/uiStore'
 import { MODEL_BLOB_KEY } from './runtime'
 import EdgedModel from './EdgedModel'
 
@@ -113,6 +114,9 @@ export default function FurnitureItem({
     if (e.button !== 0) return
     e.stopPropagation()
     useStore.getState().select(instance.id)
+    // move mode is opt-in (TopBar toggle): without it a press still selects,
+    // but the drag goes to the camera controls and orbits the view
+    if (!useUI.getState().moveMode) return
     if (controls) controls.enabled = false
     captureOf(e).setPointerCapture(e.pointerId)
     if (e.ray.intersectPlane(groundPlane, hit.current)) {

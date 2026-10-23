@@ -1,11 +1,11 @@
 import { floorPieces, polygonArea } from '../gen/architectureGeometry'
 import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
-import { homeAABB, roomById, homeForRoomLevel, sharedSpan, sideSpan, type Opening } from '../state/home'
+import { homeAABB, openingsOn, roomById, homeForRoomLevel, sharedSpan, sideSpan, type Opening } from '../state/home'
 import { subscribeZoomPct } from '../three/runtime'
 import { useUI } from './uiStore'
 import { IconButton } from './components'
-import { OPENING_KIND_LABELS, SIDE_LABELS } from './labels'
+import { OPENING_KIND_LABELS, openingKindLabel, SIDE_LABELS } from './labels'
 
 const S = {
   fill: 'none',
@@ -67,7 +67,8 @@ function StoreAwayIcon() {
 
 /**
  * 结构选择 pill：在整宅结构编辑器里点击墙条或门窗标记后出现。
- * Wall selected → +门/+窗/+打通（或阳台）；opening selected → 类型/宽度/位置/删除。
+ * Wall selected → 该墙门窗列表（点击编辑、×删除）+ +门/+窗/+打通（或阳台）；
+ * opening selected → 类型/宽度/位置/删除。
  */
 function StructurePill() {
   const home = useStore((s) => s.home)
@@ -76,6 +77,13 @@ function StructurePill() {
   const addOpening = useStore((s) => s.addOpening)
   const updateOpening = useStore((s) => s.updateOpening)
   const removeOpening = useStore((s) => s.removeOpening)
+  const selectOpening = useStore((s) => s.selectOpening)
+  const hoverOpening = useUI((s) => s.hoverOpening)
+
+  // leaving the wall pill (selection cleared / switched to an opening) drops the 3D ghost
+  useEffect(() => {
+    if (!wall) hoverOpening(null)
+  }, [wall, hoverOpening])
 
   if (opening) {
     const room = roomById(home, opening.a)
@@ -158,11 +166,31 @@ function StructurePill() {
       width: kind === 'window' ? 1.2 : 0.9,
     })
   }
+  const wallOpenings = openingsOn(room, wall.side, home.openings)
   return (
     <div className="sel-pill struct-pill">
       <span className="pill-name" title={`${room.name} · ${SIDE_LABELS[wall.side]}`}>
         {room.name} · {SIDE_LABELS[wall.side]}
       </span>
+      <div className="struct-list">
+        {wallOpenings.length === 0 && <span className="struct-empty">无门窗 No openings</span>}
+        {wallOpenings.map((o) => (
+          <span
+            key={o.id}
+            className="struct-opening"
+            title={`${openingKindLabel(o)} · ${o.width.toFixed(2)}m`}
+            onMouseEnter={() => hoverOpening(o.id)}
+            onMouseLeave={() => hoverOpening(null)}
+          >
+            <button type="button" className="struct-opening-name" onClick={() => selectOpening(o.id)}>
+              {openingKindLabel(o)} {o.width.toFixed(1)}m
+            </button>
+            <button type="button" className="struct-opening-del" title="删除 Delete" onClick={() => removeOpening(o.id)}>
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
       <div className="pill-btns">
         <button type="button" className="btn btn-ghost struct-add" onClick={() => addOnSide('door')}>
           + 门 Door

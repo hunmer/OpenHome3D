@@ -3,8 +3,9 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { Edges } from '@react-three/drei'
 import { useStore } from '../state/store'
-import { homeAABB, type RoomDef, type Side } from '../state/home'
+import { homeAABB, sideSpan, type HomeDef, type Opening, type RoomDef, type Side } from '../state/home'
 import { deriveWalls, WALL_T, type WallSegment } from '../gen/walls'
+import { useUI } from '../ui/uiStore'
 import { EDGE, SELECT_EDGE } from '../models/parametric/shared'
 import { SHELL } from '../models/palette'
 import { toonGradientMap } from '../lib/toon'
@@ -63,14 +64,14 @@ function segLength(seg: WallSegment): number {
 
 /** Doorways with their gap interval clamped into the segment (like Room.tsx's dl/dr). */
 function clampedDoorways(seg: WallSegment, L: number) {
-  const out: { dl: number; dr: number; kind: 'door' | 'open' }[] = []
+  const out: { dl: number; dr: number; kind: 'door' | 'open'; id: string }[] = []
   let prev = 0
   const doors = [...seg.doorways].sort((a, b) => a.u - b.u)
   for (const d of doors) {
     const dl = Math.max(prev === 0 ? 0.2 : prev + 0.05, d.u - d.w / 2)
     const dr = Math.min(L - 0.05, d.u + d.w / 2)
     if (dr - dl < 0.2) continue
-    out.push({ dl, dr, kind: d.kind })
+    out.push({ dl, dr, kind: d.kind, id: d.id })
     prev = dr
   }
   return out
@@ -81,12 +82,12 @@ function clampedWindows(seg: WallSegment, L: number, windowsOn: boolean) {
   if (!windowsOn) return []
   const top = Math.min(WIN_TOP, seg.height - 0.25)
   if (top - SILL < 0.25) return []
-  const out: { u: number; w: number; top: number }[] = []
+  const out: { u: number; w: number; top: number; id: string }[] = []
   for (const win of seg.windows) {
     const wl = Math.max(0.02, win.u - win.w / 2)
     const wr = Math.min(L - 0.02, win.u + win.w / 2)
     if (wr - wl < 0.25) continue
-    out.push({ u: (wl + wr) / 2, w: wr - wl, top })
+    out.push({ u: (wl + wr) / 2, w: wr - wl, top, id: win.id })
   }
   return out
 }
@@ -127,6 +128,74 @@ function segmentGeometry(
   const g = new THREE.ExtrudeGeometry(s, { depth: WALL_T, bevelEnabled: false })
   g.translate(0, 0, -WALL_T / 2)
   return g
+}
+
+/** Outward normal per side, in home coords (matches walls.ts). */
+const OUTWARD: Record<Side, [number, number]> = {
+  n: [0, -1],
+  s: [0, 1],
+  e: [1, 0],
+  w: [-1, 0],
+}
+
+/**
+ * Translucent ghost box over one opening: shown while its status-bar chip is
+ * hovered, and as the blue highlight for a SELECTED opening that has no
+ * physical part of its own (门洞/打通/阳台 — doors/windows tint their
+ * leaf/frames instead). `strong` marks selection (slightly denser than hover).
+ */
+function OpeningGlow({
+  home,
+  opening: o,
+  wallHeight,
+  strong = false,
+}: {
+  home: HomeDef
+  opening: Opening
+  wallHeight: number
+  strong?: boolean
+}) {
+  const room = home.rooms.find((r) => r.id === o.a)
+  if (!room) return null
+  const span = sideSpan(room, o.side)
+  const t = span.length > 0 ? o.offset / span.length : 0
+  // exterior walls bulge outward from the room edge; interior walls straddle it
+  const off = o.b === 'exterior' ? WALL_T / 2 : 0
+  const outward = OUTWARD[o.side]
+  const px = span.from[0] + (span.to[0] - span.from[0]) * t + outward[0] * off
+  const pz = span.from[1] + (span.to[1] - span.from[1]) * t + outward[1] * off
+  let y = 0
+  let h = 0
+  if (o.kind === 'open' && o.fullHeight) {
+    h = wallHeight
+    y = h / 2
+  } else if (o.kind === 'window') {
+    const top = Math.min(WIN_TOP, wallHeight - 0.25)
+    h = Math.max(top - SILL, 0.1)
+    y = (SILL + top) / 2
+  } else {
+    h = DOOR_H
+    y = DOOR_H / 2
+  }
+  const alongX = o.side === 'n' || o.side === 's'
+  const len = Math.max(o.width, 0.24)
+  const args: [number, number, number] = alongX ? [len, h, WALL_T + 0.12] : [WALL_T + 0.12, h, len]
+  return (
+    <mesh position={[px, y, pz]}>
+      <boxGeometry args={args} />
+      <meshStandardMaterial
+        color={SELECT_EDGE}
+        emissive={SELECT_EDGE}
+        emissiveIntensity={strong ? 0.8 : 0.5}
+        transparent
+        opacity={strong ? 0.4 : 0.3}
+        roughness={1}
+        metalness={0}
+        depthWrite={false}
+      />
+      <Edges lineWidth={1} color={SELECT_EDGE} />
+    </mesh>
+  )
 }
 
 /** Per-room partition (interior half-wall, or full wall with a doorway gap). */
@@ -182,6 +251,8 @@ export default function Home() {
   const windowsOn = useStore((s) => s.windows)
   const doorLeaves = useStore((s) => s.doorLeaves)
   const selectedWall = useStore((s) => s.selectedWall)
+  const selectedOpeningId = useStore((s) => s.selectedOpeningId)
+  const hoveredOpeningId = useUI((s) => s.hoveredOpeningId)
 
   const segments = useMemo(() => deriveWalls(home, wallHeight), [home, wallHeight])
   const aabb = useMemo(() => homeAABB(home), [home])
@@ -224,6 +295,26 @@ export default function Home() {
     })
   })
 
+  // clicking a door leaf / window frame jumps straight into that opening's editor
+  const pickOpening = useCallback((id: string) => {
+    const st = useStore.getState()
+    const o = st.home.openings.find((it) => it.id === id)
+    if (!o) return
+    st.selectRoom(o.a) // activates the declaring room first (clears selection), like OpeningMarker
+    st.selectOpening(o.id)
+  }, [])
+
+  // a selected door/window tints its own leaf/frames; kinds without a physical
+  // part (门洞/打通/阳台, or parts toggled off) fall back to the ghost glow
+  const partShown = (o: Opening) =>
+    (o.kind === 'door' && doorLeaves) || (o.kind === 'window' && windowsOn)
+  const selOpening = selectedOpeningId
+    ? home.openings.find((o) => o.id === selectedOpeningId)
+    : undefined
+  const hoverOpening = hoveredOpeningId
+    ? home.openings.find((o) => o.id === hoveredOpeningId)
+    : undefined
+
   return (
     <group>
       {/* floor: one overhanging slab over the home AABB, or a thin plate per room */}
@@ -248,7 +339,8 @@ export default function Home() {
         ))
       )}
 
-      {/* wall segments: clicking a wall selects it for the status-bar opening editor */}
+      {/* wall segments: clicking a wall body selects it for the status-bar
+          opening editor; clicking a door leaf / window frame picks that opening */}
       {resolved.map(({ seg, doors, wins }, i) => {
         const dx = seg.to[0] - seg.from[0]
         const dz = seg.to[1] - seg.from[1]
@@ -286,7 +378,8 @@ export default function Home() {
           >
             <WallMesh geometry={geoms[i]} position={[0, 0, 0]} highlight={highlighted} />
 
-            {/* door leaves, hinged at the gap start (kind 'open' has no leaf) */}
+            {/* door leaves, hinged at the gap start (kind 'open' has no leaf);
+                clicking a leaf enters that door's editor */}
             {doorLeaves &&
               doors.map((d, j) =>
                 d.kind !== 'door' ? null : (
@@ -294,44 +387,66 @@ export default function Home() {
                     key={j}
                     position={[d.dl + 0.02, 0, WALL_T / 2]}
                     rotation-y={-Math.PI / 6}
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return
+                      e.stopPropagation()
+                      pickOpening(d.id)
+                    }}
                   >
                     <WallMesh
                       color={SHELL.doorLeaf}
                       args={[d.dr - d.dl - 0.04, DOOR_H - 0.05, 0.04]}
                       position={[(d.dr - d.dl - 0.04) / 2, (DOOR_H - 0.05) / 2, 0]}
+                      highlight={selectedOpeningId === d.id}
                     />
                   </group>
                 ),
               )}
 
             {/* window frames + glass in the wall's local frame; glass gets no
-                edges/shadows and hides with its wall via the group ref */}
+                edges/shadows and hides with its wall via the group ref.
+                Clicking any frame/glass part enters that window's editor. */}
             {wins.map((win, k) => {
               const h = win.top - SILL
+              const sel = selectedOpeningId === win.id
               return (
-                <group key={`${win.u}:${k}`} position={[win.u, 0, 0]}>
+                <group
+                  key={`${win.u}:${k}`}
+                  position={[win.u, 0, 0]}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return
+                    e.stopPropagation()
+                    pickOpening(win.id)
+                  }}
+                >
                   <WallMesh
                     args={[0.05, h, WALL_T + 0.02]}
                     position={[-(win.w / 2 - 0.025), SILL + h / 2, 0]}
+                    highlight={sel}
                   />
                   <WallMesh
                     args={[0.05, h, WALL_T + 0.02]}
                     position={[win.w / 2 - 0.025, SILL + h / 2, 0]}
+                    highlight={sel}
                   />
                   {/* center mullion splits the window into two panes */}
-                  <WallMesh args={[0.04, h, WALL_T + 0.02]} position={[0, SILL + h / 2, 0]} />
+                  <WallMesh args={[0.04, h, WALL_T + 0.02]} position={[0, SILL + h / 2, 0]} highlight={sel} />
                   <WallMesh
                     args={[win.w - 0.1, 0.05, WALL_T + 0.02]}
                     position={[0, win.top - 0.025, 0]}
+                    highlight={sel}
                   />
                   <WallMesh
                     args={[win.w - 0.1, 0.05, WALL_T + 0.04]}
                     position={[0, SILL + 0.025, 0]}
+                    highlight={sel}
                   />
                   <mesh position={[0, SILL + h / 2, 0]}>
                     <boxGeometry args={[win.w - 0.06, h - 0.06, 0.02]} />
                     <meshStandardMaterial
                       color={SHELL.glass}
+                      emissive={SELECT_EDGE}
+                      emissiveIntensity={sel ? 0.5 : 0}
                       transparent
                       opacity={0.35}
                       roughness={0.1}
@@ -345,6 +460,15 @@ export default function Home() {
           </group>
         )
       })}
+
+      {/* status-bar chip hover → ghost over that opening; a selected opening
+          tints its physical part blue, partless kinds glow instead */}
+      {selOpening && !partShown(selOpening) && (
+        <OpeningGlow home={home} opening={selOpening} wallHeight={wallHeight} strong />
+      )}
+      {hoverOpening && hoverOpening.id !== selOpening?.id && (
+        <OpeningGlow home={home} opening={hoverOpening} wallHeight={wallHeight} />
+      )}
 
       {/* per-room partitions */}
       {home.rooms.map(

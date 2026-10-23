@@ -45,6 +45,8 @@ const OUTWARD: Record<Side, [number, number]> = {
 const OPPOSITE: Record<Side, Side> = { n: 's', s: 'n', e: 'w', w: 'e' }
 
 export interface WallDoorway {
+  /** owning Opening id (clicking the door leaf selects that opening) */
+  id: string
   /** center along the segment from `from` (m) */
   u: number
   /** opening width along the wall (m) */
@@ -53,6 +55,7 @@ export interface WallDoorway {
 }
 
 export interface WallWindow {
+  id: string
   u: number
   w: number
 }
@@ -156,7 +159,7 @@ export function deriveWalls(home: HomeDef, wallHeight: number): WallSegment[] {
           if (o.kind === 'open' && o.fullHeight) {
             gaps.push([conv.u - conv.w / 2, conv.u + conv.w / 2])
           } else {
-            allDoorways.push({ ...conv, kind: o.kind })
+            allDoorways.push({ ...conv, kind: o.kind, id: o.id })
           }
         }
         // subtract gap intervals from the shared span (same cursor sweep as extSpans)
@@ -242,9 +245,9 @@ export function deriveWalls(home: HomeDef, wallHeight: number): WallSegment[] {
               const tCenter = o.offset // room wall-local
               if (tCenter < p.lo - EPS || tCenter > p.hi + EPS) continue
               if (o.kind === 'window') {
-                windows.push({ u: tCenter - elo, w: o.width })
+                windows.push({ id: o.id, u: tCenter - elo, w: o.width })
               } else {
-                doorways.push({ u: tCenter - elo, w: o.width, kind: o.kind })
+                doorways.push({ id: o.id, u: tCenter - elo, w: o.width, kind: o.kind })
               }
             }
           }

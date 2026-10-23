@@ -29,8 +29,12 @@ interface UIState {
   activePanel: SidebarPanel
   /** Pan mode: drag pans the camera instead of orbiting (TopBar toggle; session-only). */
   panMode: boolean
+  /** Move mode: dragging furniture moves it instead of orbiting the camera (TopBar toggle; session-only). */
+  moveMode: boolean
   /** Collapsible Section open state, keyed by section title; session-only. */
   sectionOpen: Record<string, boolean>
+  /** Opening hovered in the status-bar chip list; the 3D shell shows a ghost highlight (session-only). */
+  hoveredOpeningId: string | null
   toasts: Toast[]
 
   openModal: (m: ActiveModal) => void
@@ -44,7 +48,10 @@ interface UIState {
   /** Switch the panel beside the rail; picking one while collapsed re-expands the sidebar. */
   setPanel: (panel: SidebarPanel) => void
   togglePanMode: () => void
+  toggleMoveMode: () => void
   toggleSection: (title: string) => void
+  /** Highlight this opening in the 3D shell (null clears); driven by status-bar chip hover. */
+  hoverOpening: (id: string | null) => void
   pushToast: (text: string) => void
 }
 
@@ -58,7 +65,10 @@ export const useUI = create<UIState>()((set, get) => ({
   collapsed: typeof window !== 'undefined' && window.innerWidth <= 720,
   activePanel: 'plan',
   panMode: false,
+  // furniture drag-move is opt-in: without it a drag on furniture orbits the camera
+  moveMode: false,
   sectionOpen: {},
+  hoveredOpeningId: null,
   toasts: [],
 
   openModal: (m) =>
@@ -87,8 +97,12 @@ export const useUI = create<UIState>()((set, get) => ({
 
   togglePanMode: () => set((s) => ({ panMode: !s.panMode })),
 
+  toggleMoveMode: () => set((s) => ({ moveMode: !s.moveMode })),
+
   toggleSection: (title) =>
     set((s) => ({ sectionOpen: { ...s.sectionOpen, [title]: !(s.sectionOpen[title] ?? true) } })),
+
+  hoverOpening: (id) => set({ hoveredOpeningId: id }),
 
   pushToast: (text) => {
     const id = ++toastId

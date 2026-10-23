@@ -296,14 +296,6 @@ export default function Sidebar() {
             <Section title="工程 Files">
               <ProjectFiles />
             </Section>
-            <a
-              className="link-btn sb-feedback"
-              href="https://github.com/yuyou-dev/OpenHome3D/issues/new/choose"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              反馈 Feedback ↗
-            </a>
           </div>
 
           <div className="sb-panel" hidden={activePanel !== 'selection'}>

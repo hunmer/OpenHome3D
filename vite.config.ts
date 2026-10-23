@@ -18,6 +18,14 @@ function inspectorTransform(): Plugin {
     async transform(code, id) {
       const [file] = id.split('?')
       if (!/\.tsx?$/.test(file) || file.includes('node_modules')) return
+      // R3F 会把 dash-case 属性当作穿透赋值解析（data-inspector-column →
+      // data.inspector-column），注入会让 applyProps 抛错、整页 3D 崩溃。
+      // 跳过 3D 场景目录与参数化家具定义（后者经 <Edged>/<Rounded> 的
+      // spread 把属性转发给 <mesh>），再兜底跳过 import three 生态的文件；
+      // 新增使用 R3F 的目录时需同步扩这里的跳过条件。
+      const normalized = file.replaceAll('\\', '/')
+      if (/src\/(three|models\/parametric)\//.test(normalized)) return
+      if (/@react-three\/|from ['"]three(\/[^'"]*)?['"]/.test(code)) return
       const relativePath = path.relative(process.cwd(), file).replaceAll('\\', '/')
       const result: BabelFileResult | null = await transformAsync(code, {
         filename: file,

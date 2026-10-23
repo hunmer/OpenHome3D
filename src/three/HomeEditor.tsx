@@ -3,7 +3,9 @@
  * planTab === 'home'. Entering the tab requests a top-down view.
  *
  * - Room overlays: one thin translucent plane per room on the floor. Press
- *   selects the room; drag moves it (snap moveGrid, Alt = off-grid) with live
+ *   selects the room; drag moves it (TopBar move mode gates the drag, like
+ *   furniture; resize handles are explicit controls and stay always-on) —
+ *   snap moveGrid, Alt = off-grid, with live
  *   overlap validation — the drag holds the last VALID candidate, applies it
  *   visually only, and commits via setRoomRect on release (x/z moves do not
  *   regenerate furniture). No valid candidate → snaps back.
@@ -31,6 +33,7 @@ import * as THREE from 'three'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Edges } from '@react-three/drei'
 import { useStore } from '../state/store'
+import { useUI } from '../ui/uiStore'
 import {
   roomById,
   roomsOverlap,
@@ -152,7 +155,12 @@ function RoomEditor({ room, active }: { room: RoomDef; active: boolean }) {
   const startDrag = (e: ThreeEvent<PointerEvent>, mode: RoomDrag['mode'], handle: HandleId | null = null) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    if (mode === 'move') useStore.getState().selectRoom(room.id) // also clears furniture/opening selection
+    if (mode === 'move') {
+      useStore.getState().selectRoom(room.id) // also clears furniture/opening selection
+      // drag-to-move rooms shares the TopBar move mode with furniture: off → the
+      // drag falls through to the camera controls and orbits instead
+      if (!useUI.getState().moveMode) return
+    }
     if (controls) controls.enabled = false
     captureOf(e).setPointerCapture(e.pointerId)
     if (e.ray.intersectPlane(groundPlane, hit.current)) {

@@ -57,6 +57,19 @@ function PanIcon() {
   )
 }
 
+/** An item (box) with outward arrows on all four sides: drag-to-move furniture. */
+function MoveIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" {...S}>
+      <rect x="5.8" y="5.8" width="4.4" height="4.4" rx="0.8" />
+      <path d="M8 4.2 V2 M6.4 3.6 L8 2 L9.6 3.6" />
+      <path d="M8 11.8 V14 M6.4 12.4 L8 14 L9.6 12.4" />
+      <path d="M4.2 8 H2 M3.6 6.4 L2 8 L3.6 9.6" />
+      <path d="M11.8 8 H14 M12.4 6.4 L14 8 L12.4 9.6" />
+    </svg>
+  )
+}
+
 function ImageIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" {...S}>
@@ -148,6 +161,8 @@ export default function TopBar() {
   const setProjection = useStore((s) => s.setProjection)
   const panMode = useUI((s) => s.panMode)
   const togglePanMode = useUI((s) => s.togglePanMode)
+  const moveMode = useUI((s) => s.moveMode)
+  const toggleMoveMode = useUI((s) => s.toggleMoveMode)
   return (
     <div className="topbar">
       <div className="tb-right">
@@ -169,6 +184,13 @@ export default function TopBar() {
             onClick={() => togglePanMode()}
           >
             <PanIcon />
+          </IconButton>
+          <IconButton
+            title={moveMode ? '移物模式:拖动家具/房间即可移动(点击关闭) Move mode on' : '移物模式关:拖动=旋转视角(点击开启) Move mode off'}
+            className={moveMode ? 'active' : undefined}
+            onClick={() => toggleMoveMode()}
+          >
+            <MoveIcon />
           </IconButton>
           <span className="cam-sep" />
           <Checkbox
