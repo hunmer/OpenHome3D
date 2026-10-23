@@ -1,5 +1,6 @@
 import SceneRoot from './three/SceneRoot'
 import AppUI from './ui/AppUI'
+import { DevInspector } from './ui/DevInspector'
 
 export default function App() {
   return (
@@ -8,6 +9,7 @@ export default function App() {
       <div className="app-canvas">
         <SceneRoot />
       </div>
+      <DevInspector />
     </div>
   )
 }

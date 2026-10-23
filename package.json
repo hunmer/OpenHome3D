@@ -53,13 +53,17 @@
     "idb-keyval": "6.3.0",
     "react": "19.2.8",
     "react-compare-slider": "^4.0.0",
+    "react-dev-inspector": "^2.0.1",
     "react-dom": "19.2.8",
     "seedrandom": "3.0.5",
     "three": "0.185.1",
     "zustand": "5.0.14"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
     "@gltf-transform/cli": "4.4.2",
+    "@react-dev-inspector/vite-plugin": "^2.0.1",
+    "@types/babel__core": "^7.20.5",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@types/seedrandom": "3.0.8",

@@ -8,7 +8,7 @@
     · <a href="#community--pull-requests">Contribute</a>
     · <a href="#中文使用指南">中文</a>
   </p>
-  <p><sub>Open source · MIT · No OpenHome3D account · No API key · Optional AI runs through your own local Codex CLI</sub></p>
+  <p><sub>Open source · MIT · No OpenHome3D account · Floor-plan AI runs through your own local Codex CLI · Rendering uses your own OpenAI-compatible image API</sub></p>
 </div>
 
 ---
@@ -19,10 +19,10 @@ The [online demo](https://yuyou-dev.github.io/OpenHome3D/) runs entirely in the 
 
 ## ✨ AI milestone: floor plan in, finished room out
 
-The latest milestone adds a real AI layer to OpenHome3D, not just another editor control. Your own local [Codex CLI](https://github.com/openai/codex) gives the app two optional superpowers:
+The latest milestone adds a real AI layer to OpenHome3D, not just another editor control. Two optional superpowers:
 
-1. **Understand a floor plan** — import a PNG or JPEG; Codex traces room polygons, walls, doors, windows, balconies, stairs and voids. Recognition opens a source/geometry comparison automatically; only **Import** replaces your current home.
-2. **Repaint the 3D scene** — turn the current cartoon composition into a photorealistic, cinematic, anime, cyberpunk, watercolor, clay, or cel-style image, while keeping the room layout and camera framing as the guide.
+1. **Understand a floor plan** — import a PNG or JPEG; your local [Codex CLI](https://github.com/openai/codex) traces room polygons, walls, doors, windows, balconies, stairs and voids. Recognition opens a source/geometry comparison automatically; only **Import** replaces your current home.
+2. **Repaint the 3D scene** — turn the current cartoon composition into a photorealistic, cinematic, anime, cyberpunk, watercolor, clay, or cel-style image, while keeping the room layout and camera framing as the guide. Rendering calls any OpenAI-compatible image API (Base URL + API Key + Model, default `gpt-image-1`) — no local Codex needed.
 
 | Editable OpenHome3D scene | Example local AI repaint |
 | --- | --- |
@@ -30,10 +30,10 @@ The latest milestone adds a real AI layer to OpenHome3D, not just another editor
 
 The image on the right is an example repaint from the scene on the left. Generative images can reinterpret small details; the editable 3D scene always remains your source of truth.
 
-### Why local Codex?
+### Why these backends?
 
-- OpenHome3D never asks for an API key or reads your Codex credential files.
-- Codex manages its own ChatGPT login and runs only when you request floor-plan understanding or a repaint.
+- Floor-plan recognition runs on your local Codex CLI: OpenHome3D never reads its credential files, and Codex manages its own ChatGPT login.
+- Rendering goes straight to an OpenAI-compatible image API you configure in the AI panel; the API key stays in the session and is never persisted.
 - The static GitHub Pages demo stays backend-free. AI buttons explain that local installation is required instead of silently failing.
 
 ## What you can make
@@ -44,7 +44,7 @@ The image on the right is an example repaint from the scene on the left. Generat
 - **A stylized presentation** — flat cel-shaded colors, ink outlines, soft shadows, isometric and perspective cameras, plus exportable project files.
 - **Edits that survive regeneration** — hand-added, edited, locked and legacy furniture stays through Shuffle; density only rebuilds unprotected automatic decorations. Room resizing clamps existing positions, and changed wall connections are repaired with a notice when an opening must be removed.
 - **Recovery and fast discovery** — 50-step session undo/redo, Chinese/English model search, and whole-home camera fitting on first load, reset and projection changes.
-- **An AI-assisted concept image** — import a plan or repaint the designed room locally through Codex.
+- **An AI-assisted concept image** — import a plan via local Codex, or repaint the designed room through your own OpenAI-compatible image API.
 
 ## Use OpenHome3D
 
@@ -121,7 +121,7 @@ npm run dev
 
 Open the local URL printed by the terminal. The random port (40000–65000) is cached in `.port`; strict port mode fails if it is occupied. Stop the old service or remove `.port` before restarting to select another port. Built-in models ship with the repository; ordinary startup does not download assets.
 
-To use the optional AI features, also install and sign in to Codex CLI, then run the project check:
+To use floor-plan recognition, also install and sign in to Codex CLI, then run the project check:
 
 ```bash
 npm i -g @openai/codex@latest
@@ -129,7 +129,9 @@ codex login
 npm run doctor
 ```
 
-`npm run doctor` checks Node compatibility, the Codex CLI version, and `codex login status`; it never reads credential files. GPT-6 Astra requires CLI **0.153.1 or newer** ([official changelog](https://learn.chatgpt.com/docs/changelog)); upgrade older versions with `npm i -g @openai/codex@latest`. Status and request preflight reject incompatible versions before starting a task. If Codex is unavailable, the browser designer still works.
+`npm run doctor` checks Node compatibility, the Codex CLI version, and `codex login status`; it never reads credential files. GPT-6 Astra requires CLI **0.153.1 or newer** ([official changelog](https://learn.chatgpt.com/docs/changelog)); upgrade older versions with `npm i -g @openai/codex@latest`. Status and request preflight reject incompatible versions before starting a task. If Codex is unavailable, the browser designer and AI rendering still work.
+
+AI rendering needs no Codex: open the AI panel and fill in an OpenAI-compatible image API (Base URL, API Key, Model — defaults `https://api.openai.com/v1` / `gpt-image-1`). The key lives in the page session only.
 
 ## A five-minute first project
 
@@ -146,7 +148,7 @@ Helpful controls: arrow keys nudge the selected item; `A` / `E` rotate it; `Alt`
 
 Undo/redo uses Ctrl/⌘ Z, Ctrl/⌘ Shift Z or Ctrl Y. A drag, continuous arrow-key edit or slider gesture counts as one step; the 50-step history lasts for the current page session. Layout, furniture, shell and floor-plan image restore together. Undoing a complete project import also restores its previous projection and grid; ordinary view changes do not become edit history. Upload-file and reference-photo management are outside undo; deleting an uploaded model clears history.
 
-“New plan” asks before replacing the whole home. To add a room, use “Add room” in the Home tab. Template changes and imports replace the plan and can be undone.
+“New plan” asks before replacing the whole home. To add a room, use “Add room” in the Home tab. Plan imports replace the plan and can be undone.
 
 The sidebar footer offers three file actions:
 
@@ -170,9 +172,11 @@ OpenHome3D plays like a cozy home-nurture game on top of the editor:
 
 ## Local AI behavior
 
-The path is browser → Vite `/api/ai/*` → `codex exec`. The app does not read credentials or require an API key; `HOME3D_CODEX_BIN` can select the codex executable. Both floor-plan recognition and render orchestration explicitly select **GPT-6 Astra** (`--model gpt-6-astra`). Recognition uses `medium` reasoning effort; render orchestration uses `high`. Both are configured in `scripts/ai-config.mjs` instead of inheriting the user's global default. See the [official model page](https://developers.openai.com/api/docs/models/gpt-6-astra). Rendering still calls codex's `image_gen` tool: GPT-6 Astra is the orchestration model, not a claim about the image tool's own model version.
+Floor-plan recognition goes browser → Vite `/api/ai/understand` → `codex exec`. The app does not read Codex credential files; `HOME3D_CODEX_BIN` can select the codex executable. Recognition explicitly selects **GPT-6 Astra** (`--model gpt-6-astra`, `medium` reasoning effort) in `scripts/ai-config.mjs` instead of inheriting the user's global default. See the [official model page](https://developers.openai.com/api/docs/models/gpt-6-astra).
 
-Recognition returns structured geometry in the original image coordinate system, then converts it once to meters. A top-layer progress dialog allows Cancel/Escape; successful recognition automatically opens the source/trace comparison. Import applies the reviewed structure and source image together, with undo support. Closing a review leaves the current scene intact. Complex plans can take several minutes; the recognition limit is 600 seconds. Rendering calls `image_gen` once. They share one execution slot. Login and busy status refresh automatically. Closing the render panel keeps the task running in the same page, with status in the top bar; reopen it to view the result or cancel. Reloading or closing the page ends the running request.
+Image rendering does **not** use the local codex CLI. The AI panel asks for an OpenAI-compatible image API — **Base URL, API Key and Model** (defaults: `https://api.openai.com/v1` and `gpt-image-1`; any compatible relay works). The browser → Vite `/api/ai/render` middleware forwards one standard `POST {baseUrl}/images/edits` multipart call (Bearer key; the 3D view plus up to five reference photos; size 1024×1024 / 1536×1024 / 1024×1536 for 1:1 / 3:2 / 2:3). The key is session-only — it is never persisted and only transits your local dev server, which also avoids browser CORS restrictions.
+
+Recognition returns structured geometry in the original image coordinate system, then converts it once to meters. A top-layer progress dialog allows Cancel/Escape; successful recognition automatically opens the source/trace comparison. Import applies the reviewed structure and source image together, with undo support. Closing a review leaves the current scene intact. Complex plans can take several minutes; the recognition limit is 600 seconds. Recognition owns the single execution slot; renders are independent HTTP calls and can run alongside it. Login and busy status refresh automatically. Closing the render panel keeps the task running in the same page, with status in the top bar; reopen it to view the result or cancel. Reloading or closing the page aborts the running request.
 
 New render-history entries retain the actual input screenshot, prompt, reference-image snapshots and result from that task. Older image-only entries display only their result. If saving history fails, the current result remains available for immediate download. Ratios are requested as 1:1, 3:2 or 2:3; the image tool determines actual dimensions and can slightly change composition.
 
@@ -242,7 +246,7 @@ Most users only need `npm run dev`. Maintainers may also use:
 | `npm run smoke:architecture` | Synthetic geometry/import/furniture/project/state regressions for architectural plans |
 | `npm run smoke:precision:ui` | Mocked import/review/cancel flow, native modal isolation, mobile image fit and structural editing |
 | `npm run smoke:editor` | Edit history, preservation, openings, plan-image recovery, search, camera and screenshot regressions |
-| `npm run smoke:ai:live -- --run` | Explicit live check: one recognition and one generated image; requires a dev server and consumes account credits |
+| `npm run smoke:ai:live -- --run` | Explicit live check: one Codex recognition and one real image API call; set `HOME3D_AI_BASEURL`/`HOME3D_AI_APIKEY` (`HOME3D_AI_MODEL` defaults to `gpt-image-1`); requires a dev server and consumes credits |
 | `npm run smoke:ai` | Middleware tests with a simulated codex executable; no real AI calls |
 | `npm run smoke:ui` | Headless Chrome screenshot, selected actions and console/HTTP error checks |
 | `npm run smoke:interactions` | Browser editing and interaction regressions |
@@ -287,7 +291,7 @@ AI 只在本机开发服务器中运行。OpenHome3D 不读取 Codex 登录文�
 编辑器之上是一层轻松的养成玩法：
 
 - **金币**：顶栏金币胶囊随时可领「挂机收入」和「每日签到」。产出速度 = 每分钟 2×房间数 + 1×摆放的不同家具种数，离线最多累计 12 小时。
-- **摆放付费，首次解锁**：手动添加/换模/复制家具都要金币（按类型分档，内建模型五折，自己上传的模型免费）。首次付费的模型进入**图鉴**；「换一换」、新房间和模板等自动布置只从图鉴免费选模——图鉴越丰富，自动布置越好。
+- **摆放付费，首次解锁**：手动添加/换模/复制家具都要金币（按类型分档，内建模型五折，自己上传的模型免费）。首次付费的模型进入**图鉴**；「换一换」和新房间等自动布置只从图鉴免费选模——图鉴越丰富，自动布置越好。
 - **房间扩展收费**：新房间和扩大房间按 10 金币/m² 计费，缩小免费。
 - **储物箱**：选中家具点状态栏「收进储物箱」即可免费收起，在侧栏「储物箱」里随时免费摆回。
 - 花费不退款（删除/撤销/新建方案都不返还），但金币、图鉴和储物箱**跨方案保留**，养成进度不会清零。
@@ -375,7 +379,7 @@ npm run doctor
 
 ### 第一次使用
 
-1. 在「整宅 Home」里选择单间、一居或两居模板；本机 AI 可用时也可以直接导入户型图。
+1. 打开即有初始方案，直接开始布置；本机 AI 可用时也可以在「整宅 Home」里直接导入户型图。
 2. 在「房间 Room」里调整当前房间类型、面宽、进深和隔墙高度。
 3. 点击「换一换 Shuffle」重排未保留的自动家具，再选中单件家具进行移动、旋转、缩放、复制或换模；手工修改后的家具默认保留。
 4. 在顶栏切换视角、轴测/透视、平移模式，以及墙体剖切、门窗、楼板和家具显示。
@@ -384,7 +388,7 @@ npm run doctor
 ### 编辑、保存与 AI 任务
 
 
-- 手动添加、修改、锁定和旧版家具默认在「换一换」时保留；密度只更新未保护的自动装饰。房间尺寸调整只夹取现有家具位置，改房型保留家具及门窗；房间变化后自动规范门窗，断开的开口移除并提示。
+- 手动添加、修改、锁定和旧版家具默认在「换一换」时保留，重排只更新未保护的自动装饰。房间尺寸调整只夹取现有家具位置，改房型保留家具及门窗；房间变化后自动规范门窗，断开的开口移除并提示。
 - 顶栏提供最多 50 步会话撤销/重做（Ctrl/⌘ Z、Ctrl/⌘ Shift Z 或 Ctrl Y），连续操作合并为一步；布局与户型原图一起恢复。完整工程导入的撤销还恢复投影和网格。上传文件/参考照片管理不入历史，删除上传模型清空历史。
 - 「新建方案」确认后覆盖整宅；增量添加使用「整宅 Home」里的「添加房间」。家具库支持中英文别名和多词交集搜索；首次打开、重置和投影切换适配整宅取景。
 - 「保存工程」下载 `.home3d`，包含当前场景引用的上传模型、参考照片、户型原图和设置，可跨浏览器恢复；「打开」兼容工程包和旧 JSON，确认后替换且可撤销。「仅布局」保留轻量 JSON v1，并明确省略范围。

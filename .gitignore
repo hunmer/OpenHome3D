@@ -9,3 +9,4 @@ tmp
 
 # Private local floor-plan images, generated projects and test evidence
 .local/
+.procm-mcp/

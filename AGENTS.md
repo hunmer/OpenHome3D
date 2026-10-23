@@ -4,7 +4,7 @@
 
 ## 项目定位、发布与同步边界
 
-- OpenHome3D（`yuyou-dev/OpenHome3D`）是开源卡通家装编辑器，共享 Home3D-Cartoon 的多房间引擎、状态、卡通渲染和 UI。基础编辑在浏览器内完成；户型识别、重绘和参考照片已包含在本项目，可选 AI 使用用户本机 codex CLI。不要再描述为“无 AI 的简化版”。
+- OpenHome3D（`yuyou-dev/OpenHome3D`）是开源卡通家装编辑器，共享 Home3D-Cartoon 的多房间引擎、状态、卡通渲染和 UI。基础编辑在浏览器内完成；户型识别、重绘和参考照片已包含在本项目，识别使用用户本机 codex CLI，重绘走用户配置的 OpenAI 兼容 HTTP 图像接口。不要再描述为“无 AI 的简化版”。
 - 共享修复逐项移植、独立验证，不整仓覆盖；保留本仓库的 `openhome3d` 存储键、项目身份、社区入口与资源 URL。Home3D 线稿版有独立渲染和 AI 实现，不直接套用。不提交本机凭证、个人绝对路径或私有代理。
 - main 的 push 会触发 GitHub Pages（`.github/workflows/pages.yml`）。`npm run build:pages` 使用 `/OpenHome3D/` base；静态资源 URL 必须加 `import.meta.env.BASE_URL` 前缀，禁止硬编码 `/models/`、`/brand/`，否则子路径部署会 404。
 - 安装、升级、卸载分别以 `INSTALL.md`、`UPGRADE.md`、`UNINSTALL.md` 为准；Companion 独立能力在 `plugins/openhome3d-companion/`，生命周期见其 `LIFECYCLE.md`。不要用共享代码同步覆盖这些独有内容。
@@ -13,12 +13,12 @@
 ## 构建与验证
 
 - 改完必须 `npm run build` 零错误（`tsc` 检查应用，`tsc -p tsconfig.node.json` 检查 Vite 配置，再执行生产构建；严格模式、`noUnusedLocals`）。完整非浏览器回归用 `npm run check`；dev server 在线时 `npm run check:ui` 运行完整浏览器门禁。
-- 布局/门窗/墙体改动跑 `npm run smoke`；编辑、图片、相机、搜索改动跑 `npm run smoke:editor`（含 `scripts/test-runtime.mjs` 的截图恢复回归）；AI 中间件改动跑 `npm run smoke:ai`（模拟 codex）。
+- 布局/门窗/墙体改动跑 `npm run smoke`；编辑、图片、相机、搜索改动跑 `npm run smoke:editor`（含 `scripts/test-runtime.mjs` 的截图恢复回归）；AI 中间件改动跑 `npm run smoke:ai`（模拟 codex CLI 与 OpenAI 兼容图像 API）。
 - UI 与交互改动按范围跑 `npm run smoke:ui`、`npm run smoke:interactions`、`npm run smoke:project`、`npm run smoke:ai-flow`、`npm run audit:ui`。这些脚本需要在线 dev server 和 Chrome，参数见 README/脚本；错误或 finding 必须导致失败退出。测试项数以实际运行输出为准。
 - dev server 使用 `scripts/pick-port.mjs` 的随机高端口和 `.port` 缓存，不写死端口；`strictPort:true` 保证缓存与实际端口一致。占用时停止旧服务，或删除 `.port` 后重新选择，禁止默默递增。浏览器测试通过 `APP_URL` 指定其他实例。
 - 开源专用检查：`npm run doctor` 检查 AI 环境（`--json` 输出机器可读结果），`npm run scan:public` 扫描工作区私有信息；Companion 改动跑 `npm run companion:test` 和 plugin/skill validator；发布前独立检查 `npm run smoke:pages`（Pages 构建、子路径资产、静态 AI 降级）。
 - SSR 状态回归用 `configFile:false`、`optimizeDeps:{noDiscovery:true,include:[]}`，避免加载 AI 插件或改写正在运行的 dev 依赖缓存。
-- 浏览器回归通过 `scripts/lib/browser.mjs` 模拟全部 AI 路由（含 status），不需要登录。常规回归不得调用真实 AI。对 `/api/ai/understand`、`/api/ai/render` 的真实端到端测试会消耗账号额度，需按任务范围单独安排。显式入口 `npm run smoke:ai:live -- --run` 使用临时 AI 中间件执行一次识别和一次出图（dev server 仅供隔离浏览器截图）；`--render-only` 可只复测出图，不得加入 `check/check:ui`。
+- 浏览器回归通过 `scripts/lib/browser.mjs` 模拟全部 AI 路由（含 status），不需要登录。常规回归不得调用真实 AI。对 `/api/ai/understand`、`/api/ai/render` 的真实端到端测试会消耗额度，需按任务范围单独安排。显式入口 `npm run smoke:ai:live -- --run` 使用临时 AI 中间件执行一次识别（codex）和一次真实图像 API 出图（`HOME3D_AI_BASEURL`/`HOME3D_AI_APIKEY`，`HOME3D_AI_MODEL` 默认 `gpt-image-1`；dev server 仅供隔离浏览器截图）；`--render-only` 可只复测出图，不得加入 `check/check:ui`。
 
 ## 状态、历史与存储
 
@@ -92,17 +92,16 @@ IndexedDB 键约定：
 
 ## 本机 AI 中间件
 
-- `scripts/ai-api.mjs` 仅通过 Vite `configureServer` 挂载 `/api/ai/*`，preview/build 没有这些端点。两个能力都运行本机 codex CLI；脚本不读取凭证，登录由 `codex login` 自管，status 用 `codex login status` 探测并缓存，路径由 `HOME3D_CODEX_BIN` 覆盖。
-- `src/state/aiTask.ts` 持有页面会话级渲染任务、表单和结果；面板卸载不取消，顶栏显示状态，用户显式取消或关闭/刷新页面终止请求。AbortController 所有权隔离晚响应，准备/请求/存储失败必须恢复可用状态。`useAiStatus` 刷新登录/忙闲状态，组件卸载清理订阅。
+- `scripts/ai-api.mjs` 仅通过 Vite `configureServer` 挂载 `/api/ai/*`，preview/build 没有这些端点。户型识别（understand）运行本机 codex CLI；脚本不读取凭证，登录由 `codex login` 自管，status 用 `codex login status` 探测并缓存，路径由 `HOME3D_CODEX_BIN` 覆盖。AI 渲染（render）不使用 codex：中间件把一次标准 OpenAI 兼容 `POST {baseUrl}/images/edits`（multipart，Bearer apiKey）转发给客户端在 AI 面板提供的图像服务（baseUrl/apiKey/model，会话内存、永不持久化）；401/403 映射 `code:'auth'`，其余非 2xx 使用 provider 的 `error.message`。
+- `src/state/aiTask.ts` 持有页面会话级渲染任务、表单（含 `api: {baseUrl,apiKey,model}`，默认值见 `AI_HTTP_DEFAULTS`：`https://api.openai.com/v1` / 空 key / `gpt-image-1`）和结果；面板卸载不取消，顶栏显示状态，用户显式取消或关闭/刷新页面终止请求。AbortController 所有权隔离晚响应，准备/请求/存储失败必须恢复可用状态。`useAiStatus` 刷新登录/忙闲状态，组件卸载清理订阅；render 的可用性门槛是三项 API 配置齐全，不再依赖 codex 登录。
 - 新历史记录为 `RenderRecord{version,image,source,prompt,referenceImages}`，索引和记录一起写入；旧字符串记录只展示结果，不拿当前截图冒充历史输入。历史写入失败保留可下载的结果；效果图与源图/提示词/参考图始终属于同一任务。
-- understand/render 共用单飞槽，登录预检后须再次核验并原子占槽，保证只有一个请求进入 exec。busy 响应带时间与任务种类；对应 cancel 端点和客户端断连都要中止任务并释放槽位。
-- codex 的 MCP 孙进程可能继承 stdio 管道，因此 `runCodex` 使用 `detached:true` + 进程组 SIGKILL；被杀/超时通过 exit 收尾，正常完成通过 close 保全 stdout。
-- 两个 exec 路径显式传 `--model gpt-6-astra`，共用 `scripts/ai-config.mjs`；识别为 `PLAN_REASONING_EFFORT=medium`，重绘编排为 `CODEX_REASONING_EFFORT=high`，不能依赖全局 Codex 默认配置；模型/推理档位断言应进入模拟回归。CLI 最低版本为 0.153.1（官方首次加入 Astra），status、请求预检和 doctor 应共用版本要求，过旧时提示 `npm i -g @openai/codex@latest` 并阻止任务。GPT-6 Astra 负责识别/编排，效果图仍由 `image_gen` 工具提供，不把两者模型版本混称。
+- 单飞槽仅 understand 使用：登录预检后须再次核验并原子占槽，保证只有一个请求进入 exec。busy 响应带时间与任务种类（只可能是 `understand`）；cancel 端点只有 `/api/ai/understand/cancel`，客户端断连也要中止任务并释放槽位。render 是普通 HTTP 转发，不占槽、可与识别并行；客户端 abort/断连直接中止上游请求，240 s 超时兜底。
+- codex 的 MCP 孙进程可能继承 stdio 管道，因此 `runCodex` 使用 `detached:true` + 进程组 SIGKILL；被杀/超时通过 exit 收尾，正常完成通过 close 保全 stdout。Windows 无法 exec shebang 脚本：含路径分隔符且非 `.exe/.cmd/.bat/.com` 的显式 `HOME3D_CODEX_BIN` 经 `process.execPath` 运行（离线 mock 依赖此行为）。
+- understand 的 exec 显式传 `--model gpt-6-astra` 与 `PLAN_REASONING_EFFORT=medium`（`scripts/ai-config.mjs`），不能依赖全局 Codex 默认配置；模型/推理档位断言应进入模拟回归。CLI 最低版本为 0.153.1（官方首次加入 Astra），status、请求预检和 doctor 应共用版本要求，过旧时提示 `npm i -g @openai/codex@latest` 并阻止识别（render 不受影响）。
 - understand 使用 `codex exec --model gpt-6-astra --ephemeral -s read-only --output-schema`，`-o` 落盘后解析，超时由脚本常量定义。应用结果时调用 `importHome(home, imageUrl)`，不要把布局与原图拆成两次编辑。
 - Pages/preview/build 没有本机 AI 端点：界面显示“本机运行可用”并禁用执行入口，不把静态演示当成服务故障。
-- render 要求恰好一次 image_gen。当前适配依赖 `-s workspace-write` 和保留 rollout（不能加 `--ephemeral`）；prompt 前加 `--`，避免 `-i` 变参吞掉 prompt。
-- 图片只从**本次任务所属**的 rollout 内联 base64 提取，不相信 saved_path 或模型文本路径。兼容旧平铺事件与 Codex 0.153 的 `item_completed → item{type:"Extension",kind:"image_gen.generation"}` 嵌套结果；形状以提取函数和 mock 测试为准；清理只能删除本次任务产物，不能以全局“最新会话”猜所有权。本服务单飞不代表其它 Codex 任务不存在。
-- 图像 prompt 保持英文：默认写实摄影在 `src/ui/modals/AIRender.tsx`，风格 fragment 在 `src/lib/aiPresets.ts`。参考照片经 `-i` 附带，视图在前；比例通过 prompt 请求，不能承诺输出精确尺寸。
+- render 的 multipart 字段：`model`、`prompt`、`size`（1:1→1024x1024、3:2→1536x1024、2:3→1024x1536，未知回落 3:2）、`n=1`、`image[]`（首张为 3D 视图，其后参考照片，服务端最多转发 1+5 张）。优先取 `data[0].b64_json`；provider 只回 `url` 时由中间件下载内联（按 PNG/JPEG 魔数定 MIME），不信任其他字段。
+- 图像 prompt 保持英文：默认写实摄影在 `src/ui/modals/AIRender.tsx`，风格 fragment 在 `src/lib/aiPresets.ts`。参考照片随 `image[]` 附带，视图在前；比例经 `size` 请求，不能承诺输出精确尺寸。
 - `AIRender.cropToAspect` 先铺 `--paper` 底色再裁剪，避免透明像素变黑影响模型构图；对比滑块使用同一输入。保留 same margins/no cropping/zooming 提示，但不承诺图生图完全保留构图。
 
 ## 精确户型与导入交互

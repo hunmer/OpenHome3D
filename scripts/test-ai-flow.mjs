@@ -92,7 +92,6 @@ try {
   })
   await open()
   busy = false
-  await page.waitForFunction(() => window.__testAiTask.getState().phase === 'idle')
   // No API key yet: the render button stays disabled even with a free slot.
   assert.equal(await page.$eval('.ai-panel .btn-primary', button => button.disabled), true, 'render disabled without API config')
   await page.evaluate(() => {
@@ -276,7 +275,7 @@ try {
   await page.waitForFunction(() => document.querySelector('dialog[open]')?.textContent.includes('Queued…'))
   await clickText('中止 Kill', `${dialog} button`)
   await page.waitForFunction(() => document.querySelector('dialog[open]')?.textContent.includes('Recognizing…'))
-  assert.deepEqual(cancellationPaths, ['/api/ai/render/cancel'])
+  assert.deepEqual(cancellationPaths, ['/api/ai/understand/cancel'])
   await waitRecognitions(1)
   await unchanged('recognition after a queue remains a pending operation')
   await clickText('放弃识别 Cancel', `${dialog} button`)

@@ -5,7 +5,7 @@ import { useUI, type SidebarPanel } from './uiStore'
 import SelectionPanel from './SelectionPanel'
 import HomeTab from './HomeTab'
 import ProjectFiles from './ProjectFiles'
-import { GhostButton, NumberInput, PrimaryButton, Section, SegmentedTabs, Slider } from './components'
+import { GhostButton, NumberInput, PrimaryButton, Section, SegmentedTabs } from './components'
 
 const S = {
   fill: 'none',
@@ -216,8 +216,6 @@ export default function Sidebar() {
   const planTab = useStore((s) => s.planTab)
   const setPlanTab = useStore((s) => s.setPlanTab)
 
-  const extras = useStore((s) => s.extras)
-  const setExtras = useStore((s) => s.setExtras)
   const storageCount = useStore((s) => s.storage.length)
 
   const structureNotice = useStore(s => s.structureNotice)
@@ -283,15 +281,6 @@ export default function Sidebar() {
 
           <div className="sb-panel" hidden={activePanel !== 'furniture'}>
             <Section title="家具 Furniture">
-              <Slider
-                label="装饰密度 Extras"
-                value={extras}
-                min={0}
-                max={100}
-                step={1}
-                display={`${extras}%`}
-                onChange={setExtras}
-              />
               <div className="btn-row">
                 <GhostButton onClick={() => openModal({ kind: 'add' })}>+ 添加家具 Add furniture</GhostButton>
               </div>

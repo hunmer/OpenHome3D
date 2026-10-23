@@ -3,78 +3,18 @@ import ArchitecturePanel, { PlanReview } from './ArchitecturePanel'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useStore } from '../state/store'
 import { useUI } from './uiStore'
-import { HOME_TEMPLATES } from '../gen/templates'
 import { ROOM_TYPES, getRoomType, typeDefaults } from '../gen/roomTypes'
 import { rngFrom } from '../lib/prng'
 import { roomAreaCost } from '../state/economy'
 import { planJsonToHome, type ImportReport } from '../gen/importPlan'
 import { aiStatus, cancelAiTask, downscaleImageToPng, understandPlan } from '../lib/ai'
 import { roomById, type HomeDef } from '../state/home'
-import { CoinIcon, GhostButton, NumberInput, PrimaryButton } from './components'
+import { CoinIcon, GhostButton, NumberInput } from './components'
 
 const miniBtnStyle: CSSProperties = {
   padding: '2px 8px',
   fontSize: 11,
   whiteSpace: 'nowrap',
-}
-
-/** Template picker + two-step apply: the first click arms a ~3s "confirm replace" state. */
-function TemplateRow() {
-  const newHome = useStore((s) => s.newHome)
-  const [templateId, setTemplateId] = useState(HOME_TEMPLATES[0].id)
-  const [confirming, setConfirming] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current)
-    },
-    [],
-  )
-
-  const apply = () => {
-    if (!confirming) {
-      setConfirming(true)
-      timer.current = setTimeout(() => setConfirming(false), 3000)
-      return
-    }
-    if (timer.current) clearTimeout(timer.current)
-    setConfirming(false)
-    newHome(templateId)
-  }
-
-  return (
-    // the label sits on its own line so the select keeps a usable width;
-    // the Apply button never shrinks (in the confirm state it wraps below)
-    <div className="row" style={{ flexWrap: 'wrap' }}>
-      <span className="row-label">模板 Template</span>
-      <span className="row-value" style={{ flex: '1 1 100%', minWidth: 0, flexWrap: 'wrap' }}>
-        <select
-          className="input"
-          style={{ flex: '1 1 120px', minWidth: 0, width: 'auto' }}
-          value={templateId}
-          onChange={(e) => {
-            setTemplateId(e.target.value)
-            setConfirming(false)
-          }}
-        >
-          {HOME_TEMPLATES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-        {confirming ? (
-          <PrimaryButton style={{ ...miniBtnStyle, flexShrink: 0 }} onClick={apply}>
-            确认覆盖? Confirm replace
-          </PrimaryButton>
-        ) : (
-          <GhostButton style={{ ...miniBtnStyle, flexShrink: 0 }} onClick={apply}>
-            应用 Apply
-          </GhostButton>
-        )}
-      </span>
-    </div>
-  )
 }
 
 /** Pick → blocking, cancellable recognition → review draft → atomic import. */
@@ -262,7 +202,7 @@ function ImportRow() {
   )
 }
 
-/** 整宅 Home tab: templates, plan import, wall height, and the room list.
+/** 整宅 Home tab: plan import, wall height, and the room list.
  *  Openings are edited by clicking walls/markers in the structure editor —
  *  see the StructurePill in the status bar. */
 export default function HomeTab() {
@@ -283,11 +223,10 @@ export default function HomeTab() {
     ? roomAreaCost(typeDefaults(newType, rngFrom(`${seed}:room:${newType}`)).width, room.rect.d)
     : 0
 
-  if (home.architecture) return <><TemplateRow/><ImportRow/><ArchitecturePanel/></>
+  if (home.architecture) return <><ImportRow/><ArchitecturePanel/></>
 
   return (
     <>
-      <TemplateRow />
       <ImportRow />
       <NumberInput
         label="墙高 Wall height"

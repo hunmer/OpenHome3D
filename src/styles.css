@@ -603,6 +603,23 @@ textarea.input:focus,
   text-decoration: underline;
 }
 
+/* dev-only element-locator toggle: floats at the right edge above the
+   statusbar hint; the component renders nothing in production builds */
+.dev-inspector-btn {
+  position: fixed;
+  right: 10px;
+  bottom: 48px;
+  z-index: 2147483647;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.dev-inspector-btn[aria-pressed='true'] {
+  /* candy solid fill = selected, per the --select-only-for-outlines rule */
+  background: var(--blue);
+}
+
 /* quiet export/import tools at the bottom of the sidebar */
 .sb-tools {
   display: flex;

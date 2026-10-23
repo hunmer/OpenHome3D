@@ -1,20 +1,23 @@
 #!/usr/bin/env node
 /**
- * OpenHome3D doctor — environment preflight for the codex-powered AI features.
+ * OpenHome3D doctor — environment preflight for the AI features.
  *
  *   node scripts/doctor.mjs [--json]
  *
  * Checks, in order: package Node engines, compatible codex CLI (or HOME3D_CODEX_BIN),
- * codex login status, dev-server port availability. Output is a three-state
- * verdict: ready | action_required | blocked (machine-readable with --json;
- * never reads credential files — `codex login status` is the only auth probe).
+ * codex login status, dev-server port availability. Recognition runs on the local
+ * codex CLI; image renders use an OpenAI-compatible HTTP image API configured at
+ * runtime in the AI panel (baseUrl / apiKey / model) — no env check needed for it.
+ * Output is a three-state verdict: ready | action_required | blocked
+ * (machine-readable with --json; never reads credential files —
+ * `codex login status` is the only auth probe).
  *
  * Exit code: 0 = ready, 1 = action_required, 2 = blocked.
  */
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { CODEX_MODEL, CODEX_REASONING_EFFORT, MIN_CODEX_VERSION, supportsCodexModel } from './ai-config.mjs'
+import { CODEX_MODEL, PLAN_REASONING_EFFORT, MIN_CODEX_VERSION, supportsCodexModel } from './ai-config.mjs'
 
 const JSON_MODE = process.argv.includes('--json')
 
@@ -39,7 +42,7 @@ const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number)
 const nodeSupported = nodeMajor === 20 && nodeMinor >= 19 || nodeMajor === 22 && nodeMinor >= 12 || nodeMajor > 22
 check('node', nodeSupported, `node ${process.versions.node}`, `Install Node.js ${pkg.engines.node} (https://nodejs.org)`)
 
-// 2. codex CLI resolvable + version
+// 2. codex CLI resolvable + version (floor-plan recognition only; renders use the image API)
 const ver = run(CODEX_BIN, ['--version'])
 if (ver.error?.code === 'ENOENT') {
   verdict = 'blocked'
@@ -47,7 +50,7 @@ if (ver.error?.code === 'ENOENT') {
     id: 'codex-cli',
     ok: false,
     detail: `${CODEX_BIN} not found on PATH`,
-    hint: 'Install the codex CLI: npm i -g @openai/codex (or set HOME3D_CODEX_BIN to its path)',
+    hint: 'Recognition needs the codex CLI: npm i -g @openai/codex (or set HOME3D_CODEX_BIN to its path)',
   })
 } else if (ver.error || ver.code !== 0) {
   verdict = 'blocked'
@@ -58,10 +61,10 @@ if (ver.error?.code === 'ENOENT') {
     hint: 'codex CLI found but failed to run — check HOME3D_CODEX_BIN / reinstall',
   })
 } else {
-  check('codex-cli', supportsCodexModel(ver.stdout), ver.stdout.split('\n')[0], `GPT-6 Astra requires codex CLI >= ${MIN_CODEX_VERSION}. Run: npm i -g @openai/codex@latest`)
+  check('codex-cli', supportsCodexModel(ver.stdout), ver.stdout.split('\n')[0], `GPT-6 Astra recognition requires codex CLI >= ${MIN_CODEX_VERSION}. Run: npm i -g @openai/codex@latest`)
 }
 
-// 3. codex login status (the AI endpoints spawn codex exec as a child process)
+// 3. codex login status (recognition spawns codex exec as a child process)
 if (checks.find((c) => c.id === 'codex-cli')?.ok) {
   const login = run(CODEX_BIN, ['login', 'status'])
   check(
@@ -80,12 +83,13 @@ const portOpen = await new Promise((resolve) => {
 })
 check('port', portOpen, portOpen ? 'a free loopback port is available' : 'no free loopback port', undefined)
 
-const out = { ok: verdict === 'ready', verdict, name: pkg.name, codexModel: CODEX_MODEL, reasoningEffort: CODEX_REASONING_EFFORT, checks }
+const out = { ok: verdict === 'ready', verdict, name: pkg.name, codexModel: CODEX_MODEL, reasoningEffort: PLAN_REASONING_EFFORT, imageApi: 'configured at runtime in the AI panel (baseUrl / apiKey / model)', checks }
 if (JSON_MODE) {
   console.log(JSON.stringify(out, null, 2))
 } else {
   console.log(`OpenHome3D doctor — verdict: ${verdict}`)
-  console.log(`  AI: ${CODEX_MODEL} · reasoning ${CODEX_REASONING_EFFORT}`)
+  console.log(`  Recognition: ${CODEX_MODEL} · reasoning ${PLAN_REASONING_EFFORT}`)
+  console.log('  Render: OpenAI-compatible image API, configured in the AI panel (baseUrl / apiKey / model)')
   for (const c of checks) {
     console.log(`  ${c.ok ? '✓' : '✗'} ${c.id}: ${c.detail}${c.hint ? `\n    → ${c.hint}` : ''}`)
   }
