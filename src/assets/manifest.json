@@ -4045,5 +4045,29 @@
       0.25
     ],
     "height": 2
+  },
+  {
+    "id": "chibi-kitten",
+    "name": "Chibi Kitten",
+    "brand": "PETS",
+    "type": "PETS",
+    "file": "/models/pets/chibi-kitten.glb",
+    "footprint": [
+      0.38,
+      0.38
+    ],
+    "height": 0.42
+  },
+  {
+    "id": "toon-cat",
+    "name": "Toon Cat",
+    "brand": "PETS",
+    "type": "PETS",
+    "file": "/models/pets/toon-cat.glb",
+    "footprint": [
+      0.23,
+      0.63
+    ],
+    "height": 0.46
   }
 ]

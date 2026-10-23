@@ -32,6 +32,9 @@ const TYPE_PRICES: Record<FurnitureType, number> = {
   LIGHTING: 120,
   OTHER: 100,
   DECOR: 60,
+  // pets are living companions (walk, play, collide), priced as a premium
+  // adoption — 520 reads as "我爱你" for the Chinese-first audience
+  PETS: 520,
 }
 
 /** Placement price: uploads are free, built-in parametrics half price. */

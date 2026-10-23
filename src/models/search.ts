@@ -11,10 +11,14 @@ const CATEGORY_WORDS: Record<FurnitureType, string> = {
   KITCHEN: '厨房 kitchen',
   BATHROOM: '卫浴 浴室 bathroom',
   DECOR: '装饰 摆件 decor',
+  PETS: '宠物 宠物专栏 pet pets',
   OTHER: '其他 other',
 }
 
 const OBJECT_ALIASES: [RegExp, string][] = [
+  [/\b(kitten|cat)\b/, '猫 小猫 猫咪 kitten cat'],
+  [/\bchibi\b/, 'Q版 chibi'],
+  [/\bpet\b/, '宠物 伙伴 pet'],
   [/\b(sofa|couch)\b/, '沙发 sofa couch'],
   [/\b(armchair|chair)\b/, '椅 椅子 chair'],
   [/\barmchair\b/, '扶手椅 armchair'],

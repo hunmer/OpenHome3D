@@ -202,24 +202,25 @@ export function deriveWalls(home: HomeDef, wallHeight: number): WallSegment[] {
       if (span.length - cursor > EPS) extSpans.push([cursor, span.length])
 
       const openings = openingsOn(room, side, home.openings).filter((o) => o.b === 'exterior')
-      // fullHeight openings to the exterior (balcony edge, 阳台): the
-      // full-height wall across the span is replaced by a parapet
-      const extGaps: [number, number][] = openings
+      // fullHeight openings to the exterior (阳台): the full-height wall across
+      // the span becomes a PARAPET_H railing — or nothing at all when the gap
+      // opted out (parapet === false, e.g. a deleted wall / 删墙)
+      const extGaps: { lo: number; hi: number; wall: boolean }[] = openings
         .filter((o) => o.kind === 'open' && o.fullHeight)
-        .map((o) => [o.offset - o.width / 2, o.offset + o.width / 2] as [number, number])
-        .sort((a, b) => a[0] - b[0])
+        .map((o) => ({ lo: o.offset - o.width / 2, hi: o.offset + o.width / 2, wall: o.parapet !== false }))
+        .sort((a, b) => a.lo - b.lo)
       const plain = openings.filter((o) => !(o.kind === 'open' && o.fullHeight))
 
       let segIdx = 0
       extSpans.forEach(([lo, hi]) => {
-        // split the span into full-height wall pieces and parapet gaps
+        // split the span into full-height wall pieces and parapet/no-wall gaps
         const pieces: { lo: number; hi: number; parapet: boolean }[] = []
         let cur = lo
-        for (const [gLo, gHi] of extGaps) {
-          const a = Math.min(hi, Math.max(lo, gLo))
-          const b = Math.min(hi, Math.max(lo, gHi))
+        for (const g of extGaps) {
+          const a = Math.min(hi, Math.max(lo, g.lo))
+          const b = Math.min(hi, Math.max(lo, g.hi))
           if (a - cur > EPS) pieces.push({ lo: cur, hi: a, parapet: false })
-          if (b - a > EPS) pieces.push({ lo: a, hi: b, parapet: true })
+          if (b - a > EPS && g.wall) pieces.push({ lo: a, hi: b, parapet: true })
           cur = Math.max(cur, b)
         }
         if (hi - cur > EPS) pieces.push({ lo: cur, hi, parapet: false })

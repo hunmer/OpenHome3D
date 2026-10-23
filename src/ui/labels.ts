@@ -16,6 +16,7 @@ export const TYPE_LABELS: Record<FurnitureType, string> = {
   KITCHEN: '厨房 Kitchen',
   BATHROOM: '卫浴 Bathroom',
   DECOR: '装饰 Decor',
+  PETS: '宠物 Pets',
   OTHER: '其他 Other',
 }
 
@@ -23,6 +24,7 @@ export const BRAND_LABELS: Record<Brand, string> = {
   'BUILT-IN': '内建 Built-in',
   KENNEY: 'KENNEY',
   KAYKIT: 'KAYKIT',
+  PETS: '宠物 Pets',
   'MY UPLOADS': '我的上传 My uploads',
 }
 
@@ -44,7 +46,8 @@ export const OPENING_KIND_LABELS: Record<Opening['kind'], string> = {
 /** Kind label with the fullHeight nuance (balcony parapet vs opened-up wall). */
 export function openingKindLabel(o: Opening): string {
   if (o.kind === 'open' && o.fullHeight) {
-    return o.b === 'exterior' ? '阳台开口 Balcony opening' : '打通 Opened up'
+    if (o.b === 'exterior') return o.parapet === false ? '已拆墙 Wall removed' : '阳台开口 Balcony opening'
+    return '打通 Opened up'
   }
   return OPENING_KIND_LABELS[o.kind]
 }

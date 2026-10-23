@@ -18,9 +18,10 @@ import { useUI } from '../uiStore'
 import { Chip, CoinIcon, GhostButton, IconButton, PrimaryButton, useInView } from '../components'
 import { BRAND_LABELS, TYPE_LABELS } from '../labels'
 
-const BRANDS: Brand[] = ['BUILT-IN', 'KENNEY', 'KAYKIT', 'MY UPLOADS']
+const BRANDS: Brand[] = ['BUILT-IN', 'KENNEY', 'KAYKIT', 'PETS', 'MY UPLOADS']
 
 const TYPES: FurnitureType[] = [
+  'PETS',
   'BEDS',
   'SEATING',
   'LIGHTING',
@@ -290,11 +291,19 @@ export default function ModelBrowser({ mode }: { mode: 'swap' | 'add' }) {
       }
     } else {
       addFurniture(def.id)
-      pushToast(
-        price > 0
-          ? `已花费 ${price} 金币摆放 — 拖拽放置 Spent ${price} coins — drag to place`
-          : '已添加 — 拖拽放置 Added, drag to place',
-      )
+      if (def.type === 'PETS') {
+        pushToast(
+          price > 0
+            ? `已花费 ${price} 金币领养 — 点击它播放动画 Adopted — click it to play`
+            : '已领养 — 点击它播放动画 Adopted — click it to play',
+        )
+      } else {
+        pushToast(
+          price > 0
+            ? `已花费 ${price} 金币摆放 — 拖拽放置 Spent ${price} coins — drag to place`
+            : '已添加 — 拖拽放置 Added, drag to place',
+        )
+      }
     }
     closeModal()
   }

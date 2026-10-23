@@ -12,6 +12,8 @@ import {
   roomsOverlap,
   fitOpening,
   reconcileOpenings,
+  sharedSpan,
+  sideSpan,
   type HomeDef,
   type Opening,
   type RoomDef,
@@ -151,6 +153,9 @@ export interface HGState extends StructureSettings {
   selectOpening: (id: string | null) => void
   addOpening: (o: Omit<Opening, 'id'>) => void
   removeOpening: (id: string) => void
+  /** Delete a wall: interior spans fully opened up (打通), exterior ones become
+   *  balcony railings; openings living on that wall are replaced by the gaps. */
+  removeWall: (roomId: string, side: Side) => void
   updateOpening: (id: string, partial: Partial<Omit<Opening, 'id'>>) => void
   setStructure: (partial: Partial<StructureSettings>) => void
   setExtras: (n: number) => void
@@ -191,6 +196,11 @@ interface LayoutSource {
   uploads: readonly ModelDef[]
 }
 
+/** Auto-layout picks furniture only: pets are hand-placed companions, never generated. */
+function layoutCatalog(owned: Set<string>): ModelDef[] {
+  return allModels().filter((m) => owned.has(m.id) && m.type !== 'PETS')
+}
+
 function layoutForRoom(
   s: LayoutSource,
   room: RoomDef,
@@ -198,7 +208,7 @@ function layoutForRoom(
   decorOnly = false,
 ): FurnitureInstance[] {
   const owned = ownedModelIds(s)
-  const models = allModels().filter((m) => owned.has(m.id))
+  const models = layoutCatalog(owned)
   if (s.home.architecture)
     return generateArchitecturalRoom(s.home, room, s.seed, s.extras, preserved, decorOnly, models)
   return generateLayout({
@@ -637,7 +647,7 @@ export const useStore = create<HGState>()(
           const s = get()
           const source = { seed: s.seed, extras: s.extras, home, unlocked: s.unlocked, furniture: s.furniture, storage: s.storage, uploads: s.uploads }
           const owned = ownedModelIds(source)
-          const catalog = allModels().filter((m) => owned.has(m.id))
+          const catalog = layoutCatalog(owned)
           const imported = home.architecture ? importArchitecturalFurniture(home, s.seed, s.extras, catalog) : null
           if (imported && home.architecture) home = {...home,architecture:{...home.architecture,warnings:[...new Set(imported.warnings)]}}
           const furniture = imported?.furniture ?? regenAll(source, home.rooms)
@@ -762,6 +772,62 @@ export const useStore = create<HGState>()(
 
         selectWall: (wall) =>
           set({ selectedWall: wall, selectedOpeningId: null, selectedId: null }),
+
+        removeWall: (roomId, side) => {
+          if (blockRectangleEdit()) return
+          const s = get()
+          const room = roomById(s.home, roomId)
+          if (!room) return
+          const span = sideSpan(room, side)
+          // shared intervals on this side, then the exposed remainders — the
+          // same split deriveWalls performs (walls are never stored)
+          const shared = s.home.rooms
+            .filter((r) => r.id !== roomId)
+            .map((other) => ({ other, sh: sharedSpan(room, other) }))
+            .filter(
+              (x): x is { other: RoomDef; sh: { side: Side; from: number; to: number } } =>
+                !!x.sh && x.sh.side === side,
+            )
+            .sort((a, b) => a.sh.from - b.sh.from)
+          const exterior: [number, number][] = []
+          let cursor = 0
+          for (const { sh } of shared) {
+            if (sh.from - cursor > 1e-6) exterior.push([cursor, sh.from])
+            cursor = Math.max(cursor, sh.to)
+          }
+          if (span.length - cursor > 1e-6) exterior.push([cursor, span.length])
+          // every opening living on this wall goes — declared by this room on
+          // this side, or by a sharing neighbor pointing back at this room
+          const onWall = (o: Opening) =>
+            (o.a === roomId && o.side === side) ||
+            (o.b === roomId && shared.some(({ other }) => other.id === o.a))
+          const gaps: Opening[] = [
+            ...shared.map(({ other, sh }): Opening => ({
+              id: uid(), kind: 'open', a: roomId, b: other.id, side,
+              offset: (sh.from + sh.to) / 2, width: sh.to - sh.from, fullHeight: true,
+            })),
+            ...exterior.map(([lo, hi]): Opening => ({
+              id: uid(), kind: 'open', a: roomId, b: 'exterior', side,
+              offset: (lo + hi) / 2, width: hi - lo, fullHeight: true,
+              // no railing either — a deleted wall vanishes completely
+              parapet: false,
+            })),
+          ]
+          // wall already fully opened → same-value edit, no snapshot
+          const gapKey = (o: Opening) => `${o.kind}|${o.b}|${o.offset.toFixed(3)}|${o.width.toFixed(3)}|${o.fullHeight ? 1 : 0}`
+          const before = s.home.openings.filter(onWall)
+          if (
+            before.length === gaps.length &&
+            [...before].map(gapKey).sort().join() === gaps.map(gapKey).sort().join()
+          ) return
+          const nextHome: HomeDef = {
+            ...s.home,
+            openings: [...s.home.openings.filter((o) => !onWall(o)), ...gaps],
+          }
+          // keep the wall selected: the pill lists the new full-height gaps
+          // (deleting one restores that wall piece)
+          set({ ...structurePatch(nextHome, s.selectedOpeningId), selectedWall: { roomId, side } })
+        },
 
         addOpening: (o) => {
           if (blockRectangleEdit()) return

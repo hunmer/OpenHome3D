@@ -42,6 +42,12 @@ export interface Opening {
    * the interior wall during derivation (see walls.ts).
    */
   fullHeight?: boolean
+  /**
+   * Only meaningful for an exterior fullHeight opening: keep the PARAPET_H
+   * railing half-wall (阳台, default) or render nothing at all — the latter
+   * is what 删墙/removeWall produces on exterior wall spans.
+   */
+  parapet?: boolean
 }
 
 export interface HomeDef {

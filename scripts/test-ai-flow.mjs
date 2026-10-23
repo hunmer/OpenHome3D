@@ -94,13 +94,66 @@ try {
   busy = false
   // No API key yet: the render button stays disabled even with a free slot.
   assert.equal(await page.$eval('.ai-panel .btn-primary', button => button.disabled), true, 'render disabled without API config')
-  await page.evaluate(() => {
-    const input = document.querySelector('.ai-panel input[type="password"]')
+  const setInput = (placeholder, value) => page.evaluate(({ placeholder, value }) => {
+    const input = [...document.querySelectorAll('.ai-panel input.input')].find(i => i.placeholder.includes(placeholder))
+    if (!input) throw new Error(`input not found: ${placeholder}`)
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-    setter.call(input, 'test-key')
+    setter.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
+  }, { placeholder, value })
+  const clickPanelButton = text => page.evaluate(text => {
+    // scoped to the config column: the center column has its own 删除 Delete (image) button
+    const button = [...document.querySelectorAll('.ai-right button')].find(b => b.textContent.trim() === text)
+    if (!button) throw new Error(`button not found: ${text}`)
+    button.click()
+  }, text)
+  const presetState = () => page.evaluate(() => {
+    const { presets, activePresetId, form } = window.__testAiTask.getState()
+    return { count: presets.length, activePresetId, api: form.api, presets: presets.map(p => ({ id: p.id, name: p.name })) }
   })
+  const selectPresetOption = id => page.evaluate(id => {
+    const select = document.querySelector('.ai-panel select.input')
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
+    setter.call(select, id)
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  }, id)
+  await setInput('API Key', 'test-key')
   await page.waitForFunction(() => !document.querySelector('.ai-panel .btn-primary')?.disabled, { timeout: 7000 })
+
+  // Preset lifecycle: rename+save the seeded preset, add a second one, switch, delete.
+  await setInput('名称', 'My OpenAI')
+  await clickPanelButton('保存 Save')
+  let preset = await presetState()
+  assert.equal(preset.count, 1, 'saving the seeded preset updates in place')
+  assert.equal(preset.api.name, 'My OpenAI')
+  assert.equal(preset.api.apiKey, 'test-key')
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('openhome3d.ai') || 'null'))
+  assert.equal(stored.version, 1)
+  assert.ok(stored.state.presets.some(p => p.name === 'My OpenAI' && p.apiKey === 'test-key'), 'presets persist in localStorage')
+  await clickPanelButton('＋ 新增 New')
+  preset = await presetState()
+  assert.equal(preset.activePresetId, null, 'new preset starts unsaved')
+  assert.equal(preset.api.name, '', 'new draft clears the name only')
+  await setInput('名称', 'Relay')
+  await setInput('Base URL', 'https://relay.example/v1')
+  await setInput('Model', 'relay-image')
+  await clickPanelButton('保存为新预设 Save as new')
+  preset = await presetState()
+  assert.equal(preset.count, 2)
+  assert.equal(preset.api.baseUrl, 'https://relay.example/v1')
+  const firstId = preset.presets.find(p => p.name === 'My OpenAI').id
+  const relayId = preset.presets.find(p => p.name === 'Relay').id
+  await selectPresetOption(firstId)
+  preset = await presetState()
+  assert.equal(preset.api.baseUrl, 'https://api.openai.com/v1', 'switching presets loads its saved values')
+  await selectPresetOption(relayId)
+  assert.equal((await presetState()).api.baseUrl, 'https://relay.example/v1')
+  await clickPanelButton('删除 Delete')
+  await clickPanelButton('确认删除? Delete?')
+  preset = await presetState()
+  assert.equal(preset.count, 1, 'delete falls back to the remaining preset')
+  assert.equal(preset.activePresetId, firstId)
+  assert.equal(preset.api.apiKey, 'test-key')
   // Renders no longer depend on the codex CLI at all.
   available = false
   reason = 'codex CLI not logged in — run: codex login'
@@ -122,7 +175,13 @@ try {
     setter.call(textarea, 'Keep the exact layout and framing. Test prompt.')
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
   })
-  await page.select('.ai-right select:not([disabled])', '1:1')
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.ai-right .form-row')].find(r => r.textContent.includes('比例 Format'))
+    const select = row.querySelector('select')
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
+    setter.call(select, '1:1')
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
   await render()
   await waitRequests(1)
   assert.equal(requests[0].body.images.length, 1, 'reference snapshot sent with request')

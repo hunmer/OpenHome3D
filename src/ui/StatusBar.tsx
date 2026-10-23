@@ -67,7 +67,7 @@ function StoreAwayIcon() {
 
 /**
  * 结构选择 pill：在整宅结构编辑器里点击墙条或门窗标记后出现。
- * Wall selected → 该墙门窗列表（点击编辑、×删除）+ +门/+窗/+打通（或阳台）；
+ * Wall selected → 该墙门窗列表（点击编辑、×删除）+ +门/+窗/+打通（或阳台）+ 删墙；
  * opening selected → 类型/宽度/位置/删除。
  */
 function StructurePill() {
@@ -77,6 +77,7 @@ function StructurePill() {
   const addOpening = useStore((s) => s.addOpening)
   const updateOpening = useStore((s) => s.updateOpening)
   const removeOpening = useStore((s) => s.removeOpening)
+  const removeWall = useStore((s) => s.removeWall)
   const selectOpening = useStore((s) => s.selectOpening)
   const hoverOpening = useUI((s) => s.hoverOpening)
 
@@ -89,7 +90,7 @@ function StructurePill() {
     const room = roomById(home, opening.a)
     if (!room) return null
     const setKind = (kind: Opening['kind']) =>
-      updateOpening(opening.id, kind === 'open' ? { kind } : { kind, fullHeight: undefined })
+      updateOpening(opening.id, kind === 'open' ? { kind } : { kind, fullHeight: undefined, parapet: undefined })
     return (
       <div className="sel-pill struct-pill">
         <span className="pill-name" title={`${room.name} · ${SIDE_LABELS[opening.side]}`}>
@@ -205,6 +206,15 @@ function StructurePill() {
           onClick={() => addOnSide('gap')}
         >
           {neighbor ? '+ 打通 Open up' : '+ 阳台 Balcony'}
+        </button>
+        <span className="cam-sep" />
+        <button
+          type="button"
+          className="btn btn-ghost struct-add"
+          title="删除这堵墙：内墙整段打通，外墙整段移除，可撤销 Remove this wall: interior opens up, exterior is removed entirely (undoable)"
+          onClick={() => removeWall(wall.roomId, wall.side)}
+        >
+          删墙 Remove wall
         </button>
       </div>
     </div>

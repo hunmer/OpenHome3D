@@ -35,7 +35,8 @@ const vite = await createServer({
 })
 try {
   const { useStore: store } = await vite.ssrLoadModule('/src/state/store.ts')
-  const { roomsOverlap } = await vite.ssrLoadModule('/src/state/home.ts')
+  const { roomsOverlap, sharedSpan, sideSpan, openingsOn } = await vite.ssrLoadModule('/src/state/home.ts')
+  const { deriveWalls } = await vite.ssrLoadModule('/src/gen/walls.ts')
   const { allModels, getModel } = await vite.ssrLoadModule('/src/models/registry.ts')
   const eco = await vite.ssrLoadModule('/src/state/economy.ts')
   const imageStorage = await vite.ssrLoadModule('/src/lib/planImage.ts')
@@ -284,6 +285,19 @@ try {
   const owned = eco.ownedModelIds(s())
   assert.ok(s().furniture.every(f => owned.has(f.modelId)), 'generated models stay inside the catalog')
 
+  // pets: premium adoption price; hand-placed companions never enter auto-layout
+  const pet = allModels().find(m => m.type === 'PETS')
+  assert.ok(pet, 'the pet catalog exists')
+  assert.equal(eco.modelPrice(pet), 520, 'pets adopt at the premium price')
+  store.setState({ furniture: [], storage: [], unlocked: [pet.id], coins: 10_000 })
+  s().addRoom('living')
+  assert.ok(s().furniture.every(f => f.modelId !== pet.id), 'auto-layout never generates pets')
+  const coinsBeforePet = s().coins
+  s().addFurniture(pet.id)
+  assert.ok(s().furniture.some(f => f.modelId === pet.id), 'pets place like ordinary furniture')
+  assert.equal(coinsBeforePet - s().coins, 520, 'adoption deducts the pet price')
+  assert.ok(s().unlocked.includes(pet.id), 'first adoption unlocks the pet')
+
   // shrinking is free; growth charges the added area
   const first = s().home.rooms[0]
   s().selectRoom(first.id)
@@ -313,7 +327,46 @@ try {
   assert.equal(s().selectedId, null, 'selecting a wall clears the furniture selection')
   s().selectWall(null)
 
-  console.log('editor-state OK: overlap, reset, undo/redo, gesture grouping, no-op redo preservation, regeneration, delayed image hydration and persistence, economy (pricing, wallet gating, catalog, storage, income and daily claims), wall/opening selection')
+  // wall deletion: the shared interior wall collapses into one full-height gap
+  // (打通), any exposed remainder of that side into balcony gaps; undo restores
+  const wallA = s().home.rooms[0]
+  const wallB = s().home.rooms.find((r) => r.id !== wallA.id)
+  const sharedAB = sharedSpan(wallA, wallB)
+  assert.ok(sharedAB, 'the two test rooms share a wall')
+  const onSharedWall = (o) =>
+    (o.a === wallA.id && o.side === sharedAB.side) || (o.a === wallB.id && o.b === wallA.id)
+  const openingsAroundDelete = s().home.openings.length
+  s().removeWall(wallA.id, sharedAB.side)
+  const afterInterior = s().home.openings.filter(onSharedWall)
+  assert.equal(afterInterior.length, afterInterior.filter((o) => o.kind === 'open' && o.fullHeight).length,
+    'a deleted wall leaves only full-height gaps')
+  const interiorGap = afterInterior.find((o) => o.b === wallB.id)
+  assert.ok(interiorGap, 'the shared interval itself becomes a gap')
+  assert.ok(Math.abs(interiorGap.width - (sharedAB.to - sharedAB.from)) < 1e-6,
+    'the gap spans the whole shared interval')
+  assert.equal(
+    deriveWalls(s().home, 2.8).filter((w) => w.kind === 'int' && w.key.includes(wallA.id) && w.key.includes(wallB.id)).length,
+    0, 'no wall segment remains between the rooms')
+  s().undo()
+  assert.equal(s().home.openings.length, openingsAroundDelete, 'undo restores the wall and its openings')
+
+  const OPPOSITE = { n: 's', s: 'n', e: 'w', w: 'e' }
+  const extSide = OPPOSITE[sharedAB.side] // room A's far side faces outside only
+  s().removeWall(wallA.id, extSide)
+  const extGaps = openingsOn(wallA, extSide, s().home.openings)
+  assert.equal(extGaps.length, 1, 'a deleted exterior wall is a single no-wall gap')
+  assert.equal(extGaps[0].b, 'exterior')
+  assert.equal(extGaps[0].fullHeight, true)
+  assert.equal(extGaps[0].parapet, false, 'a deleted exterior wall leaves no railing')
+  assert.ok(Math.abs(extGaps[0].width - sideSpan(wallA, extSide).length) < 1e-6,
+    'the gap spans the whole side')
+  assert.equal(
+    deriveWalls(s().home, 2.8).filter((w) => w.kind === 'ext' && w.roomId === wallA.id && w.key.includes(`:${extSide}:`)).length,
+    0, 'nothing at all is rendered on a deleted exterior side')
+  s().undo()
+  assert.equal(s().home.openings.length, openingsAroundDelete, 'undo restores the exterior wall too')
+
+  console.log('editor-state OK: overlap, reset, undo/redo, gesture grouping, no-op redo preservation, regeneration, delayed image hydration and persistence, economy (pricing, wallet gating, catalog, storage, income and daily claims), wall/opening selection, wall deletion')
 } finally {
   await vite.close()
 }

@@ -20,9 +20,10 @@ export type FurnitureType =
   | 'KITCHEN'
   | 'BATHROOM'
   | 'DECOR'
+  | 'PETS'
   | 'OTHER'
 
-export type Brand = 'BUILT-IN' | 'KENNEY' | 'KAYKIT' | 'MY UPLOADS'
+export type Brand = 'BUILT-IN' | 'KENNEY' | 'KAYKIT' | 'PETS' | 'MY UPLOADS'
 
 /** Unified model description: built-in parametrics, manifest GLBs and user uploads. */
 export interface ModelDef {
@@ -350,7 +351,7 @@ export const BUILTIN_MODELS: ModelDef[] = [
 interface ManifestEntry {
   id: string
   name: string
-  brand: 'KENNEY' | 'KAYKIT'
+  brand: 'KENNEY' | 'KAYKIT' | 'PETS'
   type: FurnitureType
   file: string
   /** real-world size from scripts/size-rules.mjs (optional) */
@@ -369,6 +370,7 @@ const TYPE_FOOTPRINTS: Record<FurnitureType, [number, number]> = {
   KITCHEN: [0.65, 0.65],
   BATHROOM: [0.7, 0.75],
   DECOR: [0.4, 0.4],
+  PETS: [0.4, 0.4],
   OTHER: [0.6, 0.6],
 }
 
@@ -434,12 +436,13 @@ export function allModels(): ModelDef[] {
   return [...STATIC_MODELS, ...uploads.values()]
 }
 
-/** All registered models grouped by brand (order: BUILT-IN, KENNEY, KAYKIT, MY UPLOADS). */
+/** All registered models grouped by brand (order: BUILT-IN, KENNEY, KAYKIT, PETS, MY UPLOADS). */
 export function modelsByBrand(): Record<Brand, ModelDef[]> {
   const out: Record<Brand, ModelDef[]> = {
     'BUILT-IN': [],
     KENNEY: [],
     KAYKIT: [],
+    PETS: [],
     'MY UPLOADS': [],
   }
   for (const m of allModels()) out[m.brand].push(m)

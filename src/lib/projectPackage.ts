@@ -115,7 +115,7 @@ function parsePackage(json: string): ProjectPackage {
   for (const model of p.models) {
     const def = model?.def
     requireValue(def && text(def.id) && def.id.startsWith('upload:') && !modelIds.has(def.id) && def.kind === 'upload' && def.brand === 'MY UPLOADS' && text(def.name), 'upload metadata')
-    requireValue(['BEDS', 'SEATING', 'LIGHTING', 'TABLES', 'STORAGE', 'KITCHEN', 'BATHROOM', 'DECOR', 'OTHER'].includes(def.type), 'upload type')
+    requireValue(['BEDS', 'SEATING', 'LIGHTING', 'TABLES', 'STORAGE', 'KITCHEN', 'BATHROOM', 'DECOR', 'PETS', 'OTHER'].includes(def.type), 'upload type')
     requireValue(Array.isArray(def.footprint) && def.footprint.length === 2 && def.footprint.every(positive) && (def.height === undefined || positive(def.height)), 'upload dimensions')
     requireValue(def.mount === undefined || ['floor', 'wall', 'ceiling'].includes(def.mount), 'upload mount')
     requireValue(text(model.data), 'model data')

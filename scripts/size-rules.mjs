@@ -13,6 +13,12 @@
  * the renderer's fit-inside normalization reproduces exactly this scale.
  */
 const R = [
+  // --------------------------------- PETS ----------------------------------
+  // chibi kitten: big-head proportions read best slightly larger than a real cat
+  [/^chibi-kitten/, 'y', 0.42],
+  // toon cat: tall stylized standing cat (raw bbox is in centimeters)
+  [/^toon-cat/, 'y', 0.46],
+
   // ------------------------------- BATHROOM --------------------------------
   [/^bathtub/, 'x', 1.7],
   [/^shower/, 'maxxz', 0.95],

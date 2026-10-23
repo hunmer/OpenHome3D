@@ -33,7 +33,7 @@ The image on the right is an example repaint from the scene on the left. Generat
 ### Why these backends?
 
 - Floor-plan recognition runs on your local Codex CLI: OpenHome3D never reads its credential files, and Codex manages its own ChatGPT login.
-- Rendering goes straight to an OpenAI-compatible image API you configure in the AI panel; the API key stays in the session and is never persisted.
+- Rendering goes straight to an OpenAI-compatible image API you configure in the AI panel; provider presets (API key included) are saved only in your own browser's localStorage.
 - The static GitHub Pages demo stays backend-free. AI buttons explain that local installation is required instead of silently failing.
 
 ## What you can make
@@ -174,7 +174,7 @@ OpenHome3D plays like a cozy home-nurture game on top of the editor:
 
 Floor-plan recognition goes browser → Vite `/api/ai/understand` → `codex exec`. The app does not read Codex credential files; `HOME3D_CODEX_BIN` can select the codex executable. Recognition explicitly selects **GPT-6 Astra** (`--model gpt-6-astra`, `medium` reasoning effort) in `scripts/ai-config.mjs` instead of inheriting the user's global default. See the [official model page](https://developers.openai.com/api/docs/models/gpt-6-astra).
 
-Image rendering does **not** use the local codex CLI. The AI panel asks for an OpenAI-compatible image API — **Base URL, API Key and Model** (defaults: `https://api.openai.com/v1` and `gpt-image-1`; any compatible relay works). The browser → Vite `/api/ai/render` middleware forwards one standard `POST {baseUrl}/images/edits` multipart call (Bearer key; the 3D view plus up to five reference photos; size 1024×1024 / 1536×1024 / 1024×1536 for 1:1 / 3:2 / 2:3). The key is session-only — it is never persisted and only transits your local dev server, which also avoids browser CORS restrictions.
+Image rendering does **not** use the local codex CLI. The AI panel manages **provider presets** — save any number of OpenAI-compatible services (name, Base URL, API Key, Model; add, edit, delete, save) in the 图像服务 Image API section. The default preset targets `https://api.openai.com/v1` with `gpt-image-1`; any compatible relay works. Presets live in this browser's localStorage (`openhome3d.ai`), API key included — they stay on your machine. The browser → Vite `/api/ai/render` middleware forwards one standard `POST {baseUrl}/images/edits` multipart call (Bearer key; the 3D view plus up to five reference photos; size 1024×1024 / 1536×1024 / 1024×1536 for 1:1 / 3:2 / 2:3), which also avoids browser CORS restrictions.
 
 Recognition returns structured geometry in the original image coordinate system, then converts it once to meters. A top-layer progress dialog allows Cancel/Escape; successful recognition automatically opens the source/trace comparison. Import applies the reviewed structure and source image together, with undo support. Closing a review leaves the current scene intact. Complex plans can take several minutes; the recognition limit is 600 seconds. Recognition owns the single execution slot; renders are independent HTTP calls and can run alongside it. Login and busy status refresh automatically. Closing the render panel keeps the task running in the same page, with status in the top bar; reopen it to view the result or cancel. Reloading or closing the page aborts the running request.
 

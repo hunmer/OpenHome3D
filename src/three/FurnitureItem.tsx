@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { get } from 'idb-keyval'
@@ -8,6 +8,7 @@ import { SELECT_EDGE } from '../models/parametric/shared'
 import { useStore } from '../state/store'
 import { useUI } from '../ui/uiStore'
 import { MODEL_BLOB_KEY } from './runtime'
+import { createPetController, type PetController } from './pets'
 import EdgedModel from './EdgedModel'
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,57 @@ interface DragState {
 
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
 
+/**
+ * Pet wrapper: one frame-driven group pair on top of the stored pose — the
+ * wander group carries the room-local offset and facing, the pose group the
+ * hop/squash/roll of the walk cycle and click performance. The ring (overlay)
+ * follows the wander group only, so selection stays flat on the floor.
+ */
+function PetWander({
+  controller,
+  instance,
+  children,
+  overlay,
+}: {
+  controller: PetController
+  instance: FurnitureInstance
+  children: ReactNode
+  overlay: ReactNode
+}) {
+  const wanderRef = useRef<THREE.Group>(null)
+  const poseRef = useRef<THREE.Group>(null)
+
+  // stored pose changed: drags keep the grab offset, other edits re-anchor
+  const lastPos = useRef(instance.position)
+  useEffect(() => {
+    const prev = lastPos.current
+    lastPos.current = instance.position
+    if (prev !== instance.position) controller.reanchor(instance.position)
+  }, [instance.position, controller])
+
+  useFrame((_, delta) => {
+    controller.tick(Math.min(delta, 0.05), instance)
+    const w = wanderRef.current
+    const p = poseRef.current
+    if (w) {
+      w.position.set(controller.x - instance.position[0], 0, controller.z - instance.position[1])
+      w.rotation.y = controller.heading
+    }
+    if (p) {
+      p.position.y = controller.hopY
+      p.rotation.z = controller.roll
+      p.scale.set(1 + controller.squash, 1 - controller.squash * 0.7, 1 + controller.squash)
+    }
+  })
+
+  return (
+    <group ref={wanderRef}>
+      <group ref={poseRef}>{children}</group>
+      {overlay}
+    </group>
+  )
+}
+
 /** R3F overrides event.target with its pointer-capture API at runtime. */
 type CaptureTarget = {
   setPointerCapture: (pointerId: number) => void
@@ -101,6 +153,14 @@ export default function FurnitureItem({
   const drag = useRef<DragState | null>(null)
   const hit = useRef(new THREE.Vector3())
 
+  // pets wander around their placed spot; the controller is session-only
+  const isPet = def?.type === 'PETS'
+  const pet = useMemo(
+    () => (isPet ? createPetController(instance) : null),
+    [isPet, instance.id, instance.roomId],
+  )
+  useEffect(() => () => pet?.dispose(), [pet])
+
   // Apply the throttled drag position once per frame.
   useFrame(() => {
     const d = drag.current
@@ -116,14 +176,22 @@ export default function FurnitureItem({
     useStore.getState().select(instance.id)
     // move mode is opt-in (TopBar toggle): without it a press still selects,
     // but the drag goes to the camera controls and orbits the view
-    if (!useUI.getState().moveMode) return
+    if (!useUI.getState().moveMode) {
+      // pets perform on click; furniture just selects
+      pet?.play()
+      return
+    }
     if (controls) controls.enabled = false
     captureOf(e).setPointerCapture(e.pointerId)
     if (e.ray.intersectPlane(groundPlane, hit.current)) {
-      // ground-plane hit is world space; the drag offset is room-local
+      pet?.beginDrag()
+      // ground-plane hit is world space; the drag offset is room-local and
+      // anchored to where the pet actually STANDS (it may have wandered off)
+      const baseX = pet ? pet.x : instance.position[0]
+      const baseZ = pet ? pet.z : instance.position[1]
       drag.current = {
-        offX: hit.current.x - roomOffset[0] - instance.position[0],
-        offZ: hit.current.z - roomOffset[1] - instance.position[1],
+        offX: hit.current.x - roomOffset[0] - baseX,
+        offZ: hit.current.z - roomOffset[1] - baseZ,
         next: null,
       }
     }
@@ -151,6 +219,7 @@ export default function FurnitureItem({
       useStore.getState().moveFurniture(instance.id, drag.current.next.x, drag.current.next.z)
     }
     drag.current = null
+    pet?.endDrag()
     captureOf(e).releasePointerCapture(e.pointerId)
     if (controls) controls.enabled = true
   }
@@ -192,6 +261,13 @@ export default function FurnitureItem({
     content = <UploadModel key={def.id} modelId={def.id} footprint={def.footprint} selected={selected} />
   }
 
+  const ring =
+    selected && (
+      <group position-y={-y}>
+        <SelectionRing w={footW} d={footD} />
+      </group>
+    )
+
   return (
     <group
       position={[instance.position[0], y, instance.position[1]]}
@@ -202,12 +278,16 @@ export default function FurnitureItem({
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
     >
-      <Suspense fallback={null}>{content}</Suspense>
-      {/* selection ring always lands on the floor, even for ceiling-mounted pieces */}
-      {selected && (
-        <group position-y={-y}>
-          <SelectionRing w={footW} d={footD} />
-        </group>
+      {pet ? (
+        <PetWander controller={pet} instance={instance} overlay={ring}>
+          <Suspense fallback={null}>{content}</Suspense>
+        </PetWander>
+      ) : (
+        <>
+          <Suspense fallback={null}>{content}</Suspense>
+          {/* selection ring always lands on the floor, even for ceiling-mounted pieces */}
+          {ring}
+        </>
       )}
     </group>
   )

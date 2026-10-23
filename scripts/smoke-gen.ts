@@ -732,6 +732,28 @@ for (const fx of IMPORT_FIXTURES) {
   }
 }
 
+// walls/removed-wall: an exterior fullHeight gap with parapet === false (删墙)
+// renders NOTHING on its span — no wall, no railing
+{
+  const tag = 'walls/removed-wall'
+  const home: HomeDef = {
+    rooms: [
+      { id: 'r1', type: 'living', name: 'L', rect: { x: 0, z: 0, w: 4, d: 2 }, salt: 0, partitionHeight: 0 },
+    ],
+    openings: [
+      { id: 'o1', kind: 'open', fullHeight: true, parapet: false, a: 'r1', b: 'exterior', side: 's', offset: 2, width: 3 },
+    ],
+  }
+  const near = (x: number, y: number) => Math.abs(x - y) < 1e-6
+  checks++
+  const south = deriveWalls(home, 2.8).filter((s) => s.kind === 'ext' && near(s.from[1], 1))
+  if (south.length !== 2 || south.some((s) => near(s.height, PARAPET_H))) {
+    fail(`${tag}: expected the 2 remainder pieces only, got ${JSON.stringify(south.map((s) => [s.from, s.to, s.height]))}`)
+  } else if (!south.every((s) => near(s.height, 2.8))) {
+    fail(`${tag}: remainder pieces must stay full height`)
+  }
+}
+
 // import/balcony: balcony type passes through; open exterior door → parapet
 // opening; open interior pair → fullHeight gap with the recognized width
 {

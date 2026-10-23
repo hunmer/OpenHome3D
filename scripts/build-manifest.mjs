@@ -5,9 +5,9 @@
  *
  *  - id:    unique kebab-case id derived from the filename
  *  - name:  humanized filename ("loungeSofaCorner" -> "Lounge Sofa Corner")
- *  - brand: KENNEY | KAYKIT (both kaykit dirs map to KAYKIT)
+ *  - brand: KENNEY | KAYKIT (both kaykit dirs map to KAYKIT) | PETS (pets dir)
  *  - type:  BEDS | SEATING | LIGHTING | TABLES | STORAGE | KITCHEN | BATHROOM
- *           | DECOR | OTHER, from filename word rules (see RULES)
+ *           | DECOR | PETS | OTHER, from filename word rules (see RULES)
  *  - file:  web path, e.g. /models/kenney/loungeSofaCorner.glb
  *
  * Prints a per-type summary at the end. Re-run any time; it always
@@ -31,6 +31,7 @@ const BRAND_BY_DIR = {
   kenney: 'KENNEY',
   'kaykit-furniture': 'KAYKIT',
   'kaykit-restaurant': 'KAYKIT',
+  pets: 'PETS',
 }
 
 // Classification is per-word: the kebab-case id is split on '-' and each rule
@@ -43,6 +44,8 @@ const BRAND_BY_DIR = {
 // outright (Kenney's kitchen* files, KayKit's kitchencounter/kitchentable/
 // kitchencabinet and *-kitchen names like "sink-kitchen").
 const RULES = [
+  // pets first: "dog bed" is a pet, not furniture
+  ['PETS', ['pet', 'pets', 'kitten', 'cat', 'dog', 'puppy', 'hamster', 'rabbit', 'bunny', 'parrot', 'fish tank', 'aquarium', 'turtle', 'bird']],
   ['BEDS', ['bed', 'bunk', 'bunkbed']],
   ['SEATING', ['chair', 'sofa', 'stool', 'bench', 'seat', 'ottoman', 'lounge', 'armchair', 'couch', 'booth']],
   ['LIGHTING', ['lamp', 'light', 'fan', 'chandelier']],

@@ -40,6 +40,8 @@ function download(dataUrl: string, filename: string) {
   a.click()
 }
 
+const miniBtnStyle: CSSProperties = { padding: '2px 8px', fontSize: 12, lineHeight: 1.6, whiteSpace: 'nowrap' }
+
 /** Pixel dimensions of a data-URL image. */
 function dataUrlSize(dataUrl: string): Promise<{ w: number; h: number } | null> {
   return new Promise((resolve) => {
@@ -126,9 +128,12 @@ export default function AIRender() {
   const furniture = useStore((s) => s.furniture)
 
   const [shot, setShot] = useState<string | null>(null)
-  const { form, phase, error, result, historyRevision, updateForm, setResult, start, cancel } = useAiTask()
+  const {
+    form, phase, error, result, historyRevision, updateForm, setResult, start, cancel,
+    presets, activePresetId, selectPreset, newPresetDraft, savePreset, deletePreset,
+  } = useAiTask()
   const prompt = form.prompt ?? DEFAULT_PROMPT
-  const { format, framing, presets, api } = form
+  const { format, framing, presets: stylePresets, api } = form
   const rendering = phase === 'preparing' || phase === 'running' || phase === 'saving'
   const compareShot = result?.record.source
   const status = useAiStatus()
@@ -136,11 +141,35 @@ export default function AIRender() {
   const [photoCount, setPhotoCount] = useState(0)
   const [lightbox, setLightbox] = useState(false)
   const [zoom, setZoom] = useState<'fit' | 'full'>('fit')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const model = api.model.trim() || 'gpt-image-1'
   const apiReady = api.baseUrl.trim() !== '' && api.apiKey.trim() !== '' && api.model.trim() !== ''
   // Renders proxy through the dev middleware; built previews have no /api/ai.
   const canRender = !!shot && !rendering && apiReady && !status?.busy && !import.meta.env.PROD
+
+  const activePreset = presets.find((p) => p.id === activePresetId) ?? null
+  const presetDirty = !activePreset ||
+    activePreset.name !== api.name || activePreset.baseUrl !== api.baseUrl ||
+    activePreset.apiKey !== api.apiKey || activePreset.model !== api.model
+  const canSavePreset = presetDirty && api.baseUrl.trim() !== '' && api.model.trim() !== ''
+
+  // two-click delete confirmation, auto-armed for 3 s (same pattern as plan replace)
+  useEffect(() => {
+    if (!confirmDelete) return
+    const t = setTimeout(() => setConfirmDelete(false), 3000)
+    return () => clearTimeout(t)
+  }, [confirmDelete])
+
+  const onDeletePreset = () => {
+    if (!activePreset) return
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setConfirmDelete(false)
+    deletePreset(activePreset.id)
+  }
 
   // capture the current 3D view once when the modal opens
   // (drop any selection first so the blue highlight doesn't end up in the shot)
@@ -187,14 +216,14 @@ export default function AIRender() {
       if (!frame) throw new Error('无法截取 3D 视图 Could not capture the 3D view')
       const cropped = await cropToAspect(frame, aspect)
       const references = await collectReferencePhotos(snapshot.furniture)
-      const fragments = presetFragments(presets)
+      const fragments = presetFragments(stylePresets)
       return {
         image: cropped,
         prompt: fragments.length ? `${prompt.trim()}\n\n${fragments.join('\n')}` : prompt,
         images: references.images,
         aspect,
         seed: snapshot.seed,
-        presets: PRESET_GROUPS.map((g) => presetLabel(g.id, presets[g.id]))
+        presets: PRESET_GROUPS.map((g) => presetLabel(g.id, stylePresets[g.id]))
           .filter((label): label is string => !!label)
           .map((label) => label.split(' ')[0]),
         api: { baseUrl: api.baseUrl.trim(), apiKey: api.apiKey.trim(), model: api.model.trim() },
@@ -363,7 +392,49 @@ export default function AIRender() {
           </div>
 
           <div className="form-row">
-            <span className="lbl">图像服务 Image API</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="lbl" style={{ flex: 1 }}>图像服务 Image API</span>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={miniBtnStyle}
+                onClick={() => {
+                  newPresetDraft()
+                  setConfirmDelete(false)
+                }}
+              >
+                ＋ 新增 New
+              </button>
+              {activePreset && (
+                <button type="button" className="btn btn-ghost" style={miniBtnStyle} onClick={onDeletePreset}>
+                  {confirmDelete ? '确认删除? Delete?' : '删除 Delete'}
+                </button>
+              )}
+            </div>
+            <select
+              className="input"
+              value={activePresetId ?? ''}
+              onChange={(e) => {
+                selectPreset(e.target.value || null)
+                setConfirmDelete(false)
+              }}
+            >
+              {presets.length === 0 && <option value="">无预设 No presets</option>}
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+              {activePresetId === null && presets.length > 0 && <option value="">＋ 新预设 New preset</option>}
+            </select>
+            <input
+              className="input"
+              type="text"
+              placeholder="名称 Provider name"
+              value={api.name}
+              autoComplete="off"
+              onChange={(e) => updateForm({ api: { ...api, name: e.target.value } })}
+            />
             <input
               className="input"
               type="text"
@@ -390,9 +461,15 @@ export default function AIRender() {
               spellCheck={false}
               onChange={(e) => updateForm({ api: { ...api, model: e.target.value } })}
             />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <GhostButton disabled={!canSavePreset} onClick={savePreset}>
+                {activePreset ? '保存 Save' : '保存为新预设 Save as new'}
+              </GhostButton>
+              {activePreset && !presetDirty && <span className="caption" style={{ margin: 0 }}>已保存 Saved</span>}
+            </div>
             <span className="caption">
-              OpenAI 兼容 images/edits 接口,密钥仅当前会话使用、不会保存
-              OpenAI-compatible images/edits; the key lives in this session only
+              OpenAI 兼容 images/edits;预设(含 API Key)只保存在本机浏览器 OpenAI-compatible
+              images/edits; presets (incl. the API key) are stored in this browser only
             </span>
             {!apiReady && !import.meta.env.PROD && (
               <span className="caption">填写 Base URL / API Key / Model 后即可渲染 Fill in Base URL, API Key and Model to render</span>
@@ -436,8 +513,8 @@ export default function AIRender() {
                   <span className="preset-label">{g.label}</span>
                   <select
                     className="input"
-                    value={presets[g.id] ?? 'none'}
-                    onChange={(e) => updateForm({ presets: { ...presets, [g.id]: e.target.value } })}
+                    value={stylePresets[g.id] ?? 'none'}
+                    onChange={(e) => updateForm({ presets: { ...stylePresets, [g.id]: e.target.value } })}
                   >
                     {g.options.map((o) => (
                       <option key={o.id} value={o.id}>
