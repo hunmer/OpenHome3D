@@ -37,6 +37,8 @@ try {
   }), true, 'rebuild must be deterministic')
 
   // Add a centered item to avoid nudging a wall-clamped layout fixture.
+  // The sidebar's functions live behind rail-switched panels — pick Furniture first.
+  await page.click('.rail-btn[data-panel="furniture"]')
   await clickText('添加家具')
   await page.waitForSelector('.mb-grid .card')
   const beforeAdd = (await modelState()).furniture.length
@@ -92,6 +94,8 @@ try {
   await page.waitForFunction(x => Math.abs(document.querySelector('.edge-toggle').getBoundingClientRect().x - x) < 2, {}, expanded)
 
   const beforeNew = await page.evaluate(() => window.__store.getState().exportProject())
+  // new-plan confirmation lives in the Plan panel
+  await page.click('.rail-btn[data-panel="plan"]')
   await clickText('新建方案')
   assert.equal(await page.evaluate(() => window.__store.getState().exportProject()), beforeNew, 'new plan must wait for confirmation')
   await clickText('Confirm replace')

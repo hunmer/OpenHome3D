@@ -8,6 +8,9 @@ export type ActiveModal =
   | { kind: 'ai' }
   | { kind: 'storage' }
 
+/** Sidebar panel shown next to the always-visible icon rail. */
+export type SidebarPanel = 'plan' | 'furniture' | 'files' | 'selection'
+
 export interface Toast {
   id: number
   text: string
@@ -20,8 +23,10 @@ interface UIState {
   returnTo: 'swap' | 'add' | null
   /** Brand chip to force-active when the browser reopens after an upload. */
   forcedBrand: Brand | null
-  /** Sidebar collapsed (hamburger in TopBar). */
+  /** Sidebar collapsed to the icon rail (edge tab in AppUI). */
   collapsed: boolean
+  /** Sidebar panel shown beside the rail; rail picks stay session-only. */
+  activePanel: SidebarPanel
   /** Pan mode: drag pans the camera instead of orbiting (TopBar toggle; session-only). */
   panMode: boolean
   /** Collapsible Section open state, keyed by section title; session-only. */
@@ -36,6 +41,8 @@ interface UIState {
   closeUpload: (added: boolean) => void
   consumeForcedBrand: () => Brand | null
   toggleCollapsed: () => void
+  /** Switch the panel beside the rail; picking one while collapsed re-expands the sidebar. */
+  setPanel: (panel: SidebarPanel) => void
   togglePanMode: () => void
   toggleSection: (title: string) => void
   pushToast: (text: string) => void
@@ -49,6 +56,7 @@ export const useUI = create<UIState>()((set, get) => ({
   forcedBrand: null,
   // phones start with the sidebar drawer closed (it overlays the canvas there)
   collapsed: typeof window !== 'undefined' && window.innerWidth <= 720,
+  activePanel: 'plan',
   panMode: false,
   sectionOpen: {},
   toasts: [],
@@ -74,6 +82,8 @@ export const useUI = create<UIState>()((set, get) => ({
   },
 
   toggleCollapsed: () => set((s) => ({ collapsed: !s.collapsed })),
+
+  setPanel: (panel) => set({ activePanel: panel, collapsed: false }),
 
   togglePanMode: () => set((s) => ({ panMode: !s.panMode })),
 

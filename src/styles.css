@@ -27,7 +27,10 @@ body,
 }
 
 :root {
-  --sidebar-w: 248px;
+  /* rail (46) + panel column; wide enough that panels keep their old girth */
+  --sidebar-w: 288px;
+  /* always-visible sidebar icon rail; a collapsed sidebar shrinks to it */
+  --rail-w: 46px;
   --paper: #fbf3e4;
   --panel: #fff9ee;
   --ink: #1a1a1a;
@@ -70,7 +73,7 @@ body {
 }
 
 body.sidebar-collapsed .app-canvas {
-  left: 0;
+  left: var(--rail-w);
 }
 
 /* ---------------------------------- sidebar -------------------------------- */
@@ -83,20 +86,106 @@ body.sidebar-collapsed .app-canvas {
   width: var(--sidebar-w);
   background: var(--paper);
   border-right: 2px solid var(--ink);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   z-index: 30;
   transition: width 0.18s ease;
 }
 
+/* collapsed = content gone, the icon rail stays */
 .sidebar.collapsed {
-  width: 0;
-  border-right: none;
+  width: var(--rail-w);
 }
 
 .sidebar-inner {
   /* content box of .sidebar = --sidebar-w minus its 2px right border */
+  display: flex;
   width: calc(var(--sidebar-w) - 2px);
+  height: 100%;
+}
+
+.sidebar.collapsed .sidebar-inner {
+  width: var(--rail-w);
+}
+
+/* vertical card rail: panel entries stay reachable in every sidebar state */
+.sb-rail {
+  flex: none;
+  width: var(--rail-w);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-right: 2px solid var(--ink);
+  background: var(--paper);
+}
+
+.sidebar.collapsed .sb-rail {
+  border-right: none;
+}
+
+/* rail entry: square card; active = candy fill + hard shadow */
+.rail-btn {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.rail-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.rail-btn:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+.rail-btn.active {
+  background: var(--blue);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.rail-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* selection marker dot on the 选中 Selection entry */
+.rail-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 8px;
+  height: 8px;
+  background: var(--coral);
+  border: 2px solid var(--ink);
+}
+
+/* panel column beside the rail: this part scrolls, the rail stays put */
+.sb-main {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar.collapsed .sb-main {
+  display: none;
 }
 
 .sb-header {
@@ -657,7 +746,7 @@ textarea.input:focus,
 }
 
 .ui-overlay.collapsed {
-  left: 0;
+  left: var(--rail-w);
 }
 
 /* --------------------------------- top bar --------------------------------- */
@@ -705,9 +794,9 @@ textarea.input:focus,
   transition: transform 0.18s ease;
 }
 
-/* collapsed: tab sits on the screen's left edge, chevron flips to "expand" */
+/* collapsed: tab sits on the rail's right edge, chevron flips to "expand" */
 .edge-toggle.collapsed {
-  left: 0;
+  left: var(--rail-w);
 }
 
 .edge-toggle.collapsed svg {
@@ -1865,12 +1954,14 @@ textarea.input:focus,
 
 /* ------------------------------ scrollbars --------------------------------- */
 
-/* sidebar scrolls without a visible bar (the chunky NB bar looked bad here) */
-.sidebar {
+/* sidebar (panel column) scrolls without a visible bar (the chunky NB bar looked bad here) */
+.sidebar,
+.sb-main {
   scrollbar-width: none;
 }
 
-.sidebar::-webkit-scrollbar {
+.sidebar::-webkit-scrollbar,
+.sb-main::-webkit-scrollbar {
   display: none;
 }
 
@@ -1911,6 +2002,21 @@ textarea.input:focus,
   /* drawer floats above the canvas when open (sidebar z 30 > overlay z 20) */
   .sidebar {
     box-shadow: 10px 0 30px rgba(26, 26, 26, 0.28);
+    width: 248px;
+  }
+
+  .sidebar-inner {
+    width: calc(248px - 2px);
+  }
+
+  /* a rail would eat a phone canvas: the drawer hides completely instead */
+  .sidebar.collapsed {
+    width: 0;
+    border-right: none;
+  }
+
+  .sidebar.collapsed .sidebar-inner {
+    width: 0;
   }
 
   /* drawer handle sits lower so it never fights the top bar */
@@ -1920,6 +2026,10 @@ textarea.input:focus,
     transform: none;
     width: 22px;
     height: 44px;
+  }
+
+  .edge-toggle.collapsed {
+    left: 0;
   }
 
   /* top bar: compact + horizontally scrollable as a last resort */

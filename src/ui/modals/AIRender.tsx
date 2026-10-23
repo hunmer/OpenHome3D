@@ -128,7 +128,7 @@ export default function AIRender() {
   const [shot, setShot] = useState<string | null>(null)
   const { form, phase, error, result, historyRevision, updateForm, setResult, start, cancel } = useAiTask()
   const prompt = form.prompt ?? DEFAULT_PROMPT
-  const { format, framing, presets } = form
+  const { format, framing, presets, api } = form
   const rendering = phase === 'preparing' || phase === 'running' || phase === 'saving'
   const compareShot = result?.record.source
   const status = useAiStatus()
@@ -137,8 +137,10 @@ export default function AIRender() {
   const [lightbox, setLightbox] = useState(false)
   const [zoom, setZoom] = useState<'fit' | 'full'>('fit')
 
-  const model = status?.model ?? 'GPT-6 Astra · image_gen'
-  const canRender = !!shot && !rendering && !!status?.codex?.available && !status?.busy
+  const model = api.model.trim() || 'gpt-image-1'
+  const apiReady = api.baseUrl.trim() !== '' && api.apiKey.trim() !== '' && api.model.trim() !== ''
+  // Renders proxy through the dev middleware; built previews have no /api/ai.
+  const canRender = !!shot && !rendering && apiReady && !status?.busy && !import.meta.env.PROD
 
   // capture the current 3D view once when the modal opens
   // (drop any selection first so the blue highlight doesn't end up in the shot)
@@ -195,6 +197,7 @@ export default function AIRender() {
         presets: PRESET_GROUPS.map((g) => presetLabel(g.id, presets[g.id]))
           .filter((label): label is string => !!label)
           .map((label) => label.split(' ')[0]),
+        api: { baseUrl: api.baseUrl.trim(), apiKey: api.apiKey.trim(), model: api.model.trim() },
       }
     })
   }
@@ -338,17 +341,8 @@ export default function AIRender() {
         </div>
 
         <div className="ai-right">
-          {status && !status.codex?.available && (
-            <div className="ai-warn">
-              {status.codex?.reason?.includes('not found')
-                ? '未检测到 codex CLI — 请先安装(npm i -g @openai/codex)。codex CLI not found on PATH.'
-                : status.codex?.reason?.includes('required for GPT-6')
-                  ? `Codex 版本过旧，请先升级。${status.codex.reason}`
-                  : 'codex 未登录 — 请在终端运行 codex login 后重试。Not logged in — run: codex login.'}
-            </div>
-          )}
           {!status && <div className="ai-warn">{import.meta.env.PROD
-            ? '本机功能：运行 npm run dev 并执行 codex login 后可用。线上演示不提供 AI 服务。Local only: run the dev server with Codex logged in.'
+            ? '本机功能：运行 npm run dev 后可用（渲染需自备 OpenAI 兼容接口）。线上演示不提供 AI 服务。Local only: run the dev server and fill in an OpenAI-compatible image API.'
             : '正在连接本机 AI 服务 Connecting to the local AI service…'}</div>}
           {rendering && <p className="hint">关闭面板后继续渲染；顶部 AI 按钮可查看或取消。刷新或关闭页面将中止任务。Continue in background; reopen from AI to check or cancel. Reloading ends the task.</p>}
           {error && <div className="ai-warn error">{error}</div>}
@@ -369,13 +363,40 @@ export default function AIRender() {
           </div>
 
           <div className="form-row">
-            <span className="lbl">模型 Model</span>
-            <select className="input" disabled>
-              <option>codex · image_gen</option>
-            </select>
+            <span className="lbl">图像服务 Image API</span>
+            <input
+              className="input"
+              type="text"
+              placeholder="Base URL https://api.openai.com/v1"
+              value={api.baseUrl}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => updateForm({ api: { ...api, baseUrl: e.target.value } })}
+            />
+            <input
+              className="input"
+              type="password"
+              placeholder="API Key"
+              value={api.apiKey}
+              autoComplete="off"
+              onChange={(e) => updateForm({ api: { ...api, apiKey: e.target.value } })}
+            />
+            <input
+              className="input"
+              type="text"
+              placeholder="Model gpt-image-1"
+              value={api.model}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => updateForm({ api: { ...api, model: e.target.value } })}
+            />
             <span className="caption">
-              本机 codex CLI 出图(ChatGPT 登录态,无需 API key) Runs on the local codex CLI
+              OpenAI 兼容 images/edits 接口,密钥仅当前会话使用、不会保存
+              OpenAI-compatible images/edits; the key lives in this session only
             </span>
+            {!apiReady && !import.meta.env.PROD && (
+              <span className="caption">填写 Base URL / API Key / Model 后即可渲染 Fill in Base URL, API Key and Model to render</span>
+            )}
           </div>
 
           <div className="form-row">
@@ -436,7 +457,7 @@ export default function AIRender() {
           <div style={{ marginTop: 'auto' }}>
             {!!status?.busy && !rendering && (
               <span className="caption">
-                另一个 codex 任务进行中,结束后即可渲染 A codex task is running — render unlocks when it
+                识别任务进行中,结束后即可渲染 A recognition task is running — render unlocks when it
                 finishes
               </span>
             )}

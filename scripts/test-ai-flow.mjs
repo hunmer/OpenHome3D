@@ -25,7 +25,7 @@ try {
       return
     }
     if (path === '/api/ai/understand') {
-      if (busy) return respond(request, { ok: false, code: 'busy', kind: 'render', startedAt: Date.now(), error: 'busy' })
+      if (busy) return respond(request, { ok: false, code: 'busy', kind: 'understand', startedAt: Date.now(), error: 'busy' })
       recognitionRequests.push(request)
       return
     }
@@ -91,18 +91,30 @@ try {
     return url
   })
   await open()
-  await page.waitForFunction(() => document.querySelector('.ai-panel .btn-primary')?.disabled)
   busy = false
+  await page.waitForFunction(() => window.__testAiTask.getState().phase === 'idle')
+  // No API key yet: the render button stays disabled even with a free slot.
+  assert.equal(await page.$eval('.ai-panel .btn-primary', button => button.disabled), true, 'render disabled without API config')
+  await page.evaluate(() => {
+    const input = document.querySelector('.ai-panel input[type="password"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, 'test-key')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
   await page.waitForFunction(() => !document.querySelector('.ai-panel .btn-primary')?.disabled, { timeout: 7000 })
+  // Renders no longer depend on the codex CLI at all.
   available = false
-  reason = 'codex CLI >= 0.153.1 required for GPT-6 Astra — update: npm i -g @openai/codex@latest'
-  await page.waitForFunction(() => document.querySelector('.ai-warn')?.textContent.includes('Codex 版本过旧'), { timeout: 7000 })
-  assert.equal(await page.$eval('.ai-panel .btn-primary', button => button.disabled), true)
-  assert.match(await page.$eval('.ai-warn', node => node.textContent), /npm i -g @openai\/codex@latest/)
   reason = 'codex CLI not logged in — run: codex login'
-  await page.waitForFunction(() => document.querySelector('.ai-warn')?.textContent.includes('codex 未登录'), { timeout: 7000 })
+  await new Promise(resolve => setTimeout(resolve, 2500))
+  assert.equal(await page.$eval('.ai-panel .btn-primary', button => button.disabled), false, 'render enabled without codex')
+  assert.equal(await page.$('.ai-warn'), null, 'codex availability no longer gates the render panel')
   available = true
   reason = undefined
+  // A running recognition still holds the shared UI gate.
+  busy = true
+  await new Promise(resolve => setTimeout(resolve, 2500))
+  assert.equal(await page.$eval('.ai-panel .btn-primary', button => button.disabled), true, 'render disabled while recognition runs')
+  busy = false
   await page.waitForFunction(() => !document.querySelector('.ai-panel .btn-primary')?.disabled, { timeout: 7000 })
 
   await page.evaluate(() => {
@@ -116,6 +128,9 @@ try {
   await waitRequests(1)
   assert.equal(requests[0].body.images.length, 1, 'reference snapshot sent with request')
   assert.match(requests[0].body.prompt, /Test prompt/)
+  assert.equal(requests[0].body.apiKey, 'test-key', 'image API key sent with the request')
+  assert.equal(requests[0].body.model, 'gpt-image-1')
+  assert.match(requests[0].body.baseUrl, /^https?:\/\//)
   await page.evaluate(() => document.querySelector('.ai-panel .btn-primary').click())
   assert.equal(requests.length, 1, 'repeat click cannot create a second task')
   await clickText('后台运行')

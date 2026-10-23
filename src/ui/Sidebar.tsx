@@ -1,11 +1,94 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useStore, type PlanTab } from '../state/store'
 import { ROOM_TYPES } from '../gen/roomTypes'
-import { useUI } from './uiStore'
+import { useUI, type SidebarPanel } from './uiStore'
 import SelectionPanel from './SelectionPanel'
 import HomeTab from './HomeTab'
 import ProjectFiles from './ProjectFiles'
 import { GhostButton, NumberInput, PrimaryButton, Section, SegmentedTabs, Slider } from './components'
+
+const S = {
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+} as const
+
+/** 方案 Plan: outer wall with an inner partition and a doorway gap. */
+function PlanIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" {...S}>
+      <path d="M2.5 2.5 H13.5 V13.5 H2.5 Z" />
+      <path d="M8 2.5 V6 M8 9 V13.5 M8 9 H13.5" />
+    </svg>
+  )
+}
+
+/** 家具 Furniture: couch — seat, backrest, arms. */
+function SofaIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" {...S}>
+      <path d="M2 9 H14 V12.5 H2 Z" />
+      <path d="M2 9 V6.8 M14 9 V6.8 M4.5 6.8 V4.5 H11.5 V6.8" />
+    </svg>
+  )
+}
+
+/** 工程 Files: project folder. */
+function FilesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" {...S}>
+      <path d="M2 4 H6.5 L8 5.5 H14 V12.5 H2 Z" />
+    </svg>
+  )
+}
+
+/** 选中 Selection: pointer cursor. */
+function SelectIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" {...S}>
+      <path d="M4.5 2.5 L12 8.7 L8.9 9.3 L10.7 13 L9 13.8 L7.2 10.1 L4.5 12.3 Z" />
+    </svg>
+  )
+}
+
+/**
+ * Rail entry card: picks the panel shown beside the rail (and re-expands a
+ * collapsed sidebar). The rail itself stays mounted in every sidebar state.
+ */
+function RailButton({
+  panel,
+  label,
+  active,
+  disabled,
+  dot,
+  children,
+}: {
+  panel: SidebarPanel
+  label: string
+  active: boolean
+  disabled?: boolean
+  /** Selection marker: something in the scene is selected. */
+  dot?: boolean
+  children: ReactNode
+}) {
+  const setPanel = useUI((s) => s.setPanel)
+  return (
+    <button
+      type="button"
+      data-panel={panel}
+      className={`rail-btn${active ? ' active' : ''}`}
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => setPanel(panel)}
+    >
+      {children}
+      {dot && <span className="rail-dot" aria-hidden="true" />}
+    </button>
+  )
+}
 
 const PLAN_TABS: { value: PlanTab; label: string }[] = [
   { value: 'home', label: '整宅 Home' },
@@ -126,6 +209,7 @@ function GitHubIcon() {
 
 export default function Sidebar() {
   const collapsed = useUI((s) => s.collapsed)
+  const activePanel = useUI((s) => s.activePanel)
   const openModal = useUI((s) => s.openModal)
   const pushToast = useUI((s) => s.pushToast)
   const selectedId = useStore((s) => s.selectedId)
@@ -147,61 +231,100 @@ export default function Sidebar() {
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
       <div className="sidebar-inner">
-        <div className="sb-header">
-          <img className="sb-logo" src={`${import.meta.env?.BASE_URL ?? '/'}brand/logo-header.webp`} alt="家居生成器 logo" />
-          <span className="sb-title">家居生成器</span>
-          <span className="sb-axo">Cartoon</span>
-          <a
-            className="icon-btn sb-github"
-            href="https://github.com/yuyou-dev/OpenHome3D"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="GitHub 仓库 Repository"
+        {/* vertical card rail: always visible, collapsed sidebar = rail only */}
+        <nav className="sb-rail" aria-label="侧栏功能 Sidebar panels">
+          <RailButton panel="plan" label="方案 Plan" active={activePanel === 'plan'}>
+            <PlanIcon />
+          </RailButton>
+          <RailButton panel="furniture" label="家具 Furniture" active={activePanel === 'furniture'}>
+            <SofaIcon />
+          </RailButton>
+          <RailButton panel="files" label="工程 Files" active={activePanel === 'files'}>
+            <FilesIcon />
+          </RailButton>
+          <RailButton
+            panel="selection"
+            label="选中 Selection"
+            active={activePanel === 'selection'}
+            disabled={!selectedId}
+            dot={!!selectedId}
           >
-            <GitHubIcon />
-          </a>
+            <SelectIcon />
+          </RailButton>
+        </nav>
+
+        <div className="sb-main">
+          <div className="sb-header">
+            <img className="sb-logo" src={`${import.meta.env?.BASE_URL ?? '/'}brand/logo-header.webp`} alt="家居生成器 logo" />
+            <span className="sb-title">家居生成器</span>
+            <span className="sb-axo">Cartoon</span>
+            <a
+              className="icon-btn sb-github"
+              href="https://github.com/yuyou-dev/OpenHome3D"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="GitHub 仓库 Repository"
+            >
+              <GitHubIcon />
+            </a>
+          </div>
+
+          {/* panels stay mounted (hidden ones via [hidden]) so DOM-driven
+              regressions keep finding their inputs and buttons */}
+          <div className="sb-panel" hidden={activePanel !== 'plan'}>
+            <Section title="方案 Plan">
+              <div style={{ marginBottom: 10 }}>
+                <SegmentedTabs options={PLAN_TABS} value={planTab} onChange={setPlanTab} />
+              </div>
+              {planTab === 'room' && <RoomTab />}
+              {planTab === 'home' && <HomeTab />}
+            </Section>
+          </div>
+
+          <div className="sb-panel" hidden={activePanel !== 'furniture'}>
+            <Section title="家具 Furniture">
+              <Slider
+                label="装饰密度 Extras"
+                value={extras}
+                min={0}
+                max={100}
+                step={1}
+                display={`${extras}%`}
+                onChange={setExtras}
+              />
+              <div className="btn-row">
+                <GhostButton onClick={() => openModal({ kind: 'add' })}>+ 添加家具 Add furniture</GhostButton>
+              </div>
+              <div className="btn-row">
+                <GhostButton onClick={() => openModal({ kind: 'storage' })}>
+                  储物箱 Storage{storageCount > 0 ? ` (${storageCount})` : ''}
+                </GhostButton>
+              </div>
+            </Section>
+          </div>
+
+          <div className="sb-panel" hidden={activePanel !== 'files'}>
+            <Section title="工程 Files">
+              <ProjectFiles />
+            </Section>
+            <a
+              className="link-btn sb-feedback"
+              href="https://github.com/yuyou-dev/OpenHome3D/issues/new/choose"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              反馈 Feedback ↗
+            </a>
+          </div>
+
+          <div className="sb-panel" hidden={activePanel !== 'selection'}>
+            {selectedId ? (
+              <SelectionPanel />
+            ) : (
+              <p className="caption">未选中家具；在场景中点击家具后可在此编辑 Nothing selected</p>
+            )}
+          </div>
         </div>
-
-        {selectedId && <SelectionPanel />}
-
-        <Section title="方案 Plan" collapsible>
-          <div style={{ marginBottom: 10 }}>
-            <SegmentedTabs options={PLAN_TABS} value={planTab} onChange={setPlanTab} />
-          </div>
-          {planTab === 'room' && <RoomTab />}
-          {planTab === 'home' && <HomeTab />}
-        </Section>
-
-        <Section title="家具 Furniture" collapsible>
-          <Slider
-            label="装饰密度 Extras"
-            value={extras}
-            min={0}
-            max={100}
-            step={1}
-            display={`${extras}%`}
-            onChange={setExtras}
-          />
-          <div className="btn-row">
-            <GhostButton onClick={() => openModal({ kind: 'add' })}>+ 添加家具 Add furniture</GhostButton>
-          </div>
-          <div className="btn-row">
-            <GhostButton onClick={() => openModal({ kind: 'storage' })}>
-              储物箱 Storage{storageCount > 0 ? ` (${storageCount})` : ''}
-            </GhostButton>
-          </div>
-        </Section>
-
-        <ProjectFiles />
-
-        <a
-          className="link-btn sb-feedback"
-          href="https://github.com/yuyou-dev/OpenHome3D/issues/new/choose"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          反馈 Feedback ↗
-        </a>
       </div>
     </aside>
   )

@@ -84,7 +84,6 @@ function ImportRow() {
   const fileRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const generationRef = useRef(0) // invalidates preparation, recognition and queued status replies
-  const blockingKindRef = useRef<'understand' | 'render'>('understand')
   const pollRef = useRef<number | null>(null)
   const imgRef = useRef<string | null>(null) // image waiting for a free slot
   const startRef = useRef(0) // running: our start; queued: other task's busySince
@@ -156,10 +155,9 @@ function ImportRow() {
         return
       }
       if (res.code === 'busy') {
-        // single-flight slot held by another (possibly stale) task → queue:
+        // single-flight slot held by another (possibly stale) recognition → queue:
         // poll status, auto-start once it frees
         startRef.current = res.startedAt ?? Date.now()
-        blockingKindRef.current = res.kind ?? 'understand'
         setPhase('queued')
         stopPolling()
         let polling = false
@@ -170,7 +168,6 @@ function ImportRow() {
             polling = false
             if (generation !== generationRef.current || !st) return
             if (st.busy) {
-              if (st.busyKind) blockingKindRef.current = st.busyKind
               if (st.busySince) startRef.current = st.busySince
               return
             }
@@ -220,7 +217,7 @@ function ImportRow() {
   }
 
   const killPrevious = () => {
-    void cancelAiTask(blockingKindRef.current).then((killed) =>
+    void cancelAiTask().then((killed) =>
       pushToast(killed ? '已中止上一任务 Previous task killed' : '上一任务已结束 Nothing to kill'),
     )
   }

@@ -1,9 +1,9 @@
-// Shared by recognition and render orchestration; image_gen selects its own image model.
+// Shared by recognition (codex-backed) and status reporting; image renders go
+// through the user-configured OpenAI-compatible HTTP API instead.
 export const CODEX_MODEL = 'gpt-6-astra'
-export const CODEX_REASONING_EFFORT = 'high'
 // Dense pixel tracing is bounded by the interactive recognition timeout; verify geometry, not effort labels.
 export const PLAN_REASONING_EFFORT = 'medium'
-export const MODEL_LABEL = 'GPT-6 Astra · image_gen'
+export const MODEL_LABEL = 'GPT-6 Astra'
 
 export const MIN_CODEX_VERSION = '0.153.1'
 

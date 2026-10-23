@@ -1,6 +1,7 @@
 /**
- * Client helpers for the local codex-powered AI API (see scripts/ai-api.mjs).
- * All AI work runs through the local codex CLI — no other backend.
+ * Client helpers for the local AI API (see scripts/ai-api.mjs). Floor-plan
+ * recognition runs on the local codex CLI; image renders proxy one call to a
+ * user-configured OpenAI-compatible HTTP image API.
  */
 import { del, delMany, get, keys, set, setMany } from 'idb-keyval'
 import type { FurnitureInstance } from '../models/registry'
@@ -11,12 +12,12 @@ export interface AiStatus {
     available: boolean
     reason?: string
   }
-  /** single-flight slot occupied (a codex task is running server-side) */
+  /** single-flight slot occupied (a codex recognition task is running server-side) */
   busy?: boolean
   /** epoch ms when the running task started */
   busySince?: number | null
   /** which endpoint holds the slot */
-  busyKind?: 'understand' | 'render' | null
+  busyKind?: 'understand' | null
   model: string
   codexModel?: string
 }
@@ -26,17 +27,13 @@ export interface AiRenderResult {
   image: string // data:image/png;base64,...
   durationMs: number
   model: string
-  codexModel?: string
   aspect: string
 }
 
 export interface AiRenderError {
   ok: false
-  code: 'auth' | 'busy' | 'cancelled' | 'error'
+  code: 'auth' | 'cancelled' | 'error'
   error: string
-  /** busy only: epoch ms when the running (other) task started */
-  startedAt?: number
-  kind?: 'understand' | 'render'
 }
 
 export interface UnderstandResult {
@@ -50,9 +47,9 @@ export interface UnderstandError {
   ok: false
   code: 'auth' | 'busy' | 'cancelled' | 'error'
   error: string
-  /** busy only: epoch ms when the running (other) task started */
+  /** busy only: epoch ms when the running task started */
   startedAt?: number
-  kind?: 'understand' | 'render'
+  kind?: 'understand'
 }
 
 export async function aiStatus(): Promise<AiStatus | null> {
@@ -66,13 +63,20 @@ export async function aiStatus(): Promise<AiStatus | null> {
   }
 }
 
+/** Image-API settings the render endpoint forwards to (OpenAI-compatible). */
+export interface AiHttpConfig {
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
 export async function aiRender(opts: {
   prompt: string
   image: string
   images?: string[]
   aspect: string
   signal?: AbortSignal
-}): Promise<AiRenderResult | AiRenderError> {
+} & AiHttpConfig): Promise<AiRenderResult | AiRenderError> {
   try {
     const r = await fetch('/api/ai/render', {
       method: 'POST',
@@ -82,6 +86,9 @@ export async function aiRender(opts: {
         image: opts.image,
         images: opts.images ?? [],
         aspect: opts.aspect,
+        baseUrl: opts.baseUrl,
+        apiKey: opts.apiKey,
+        model: opts.model,
       }),
       signal: opts.signal ?? null,
     })
@@ -121,12 +128,13 @@ export async function understandPlan(
 }
 
 /**
- * Kill the server-side in-flight codex task (single-flight escape hatch for
- * a stuck or orphaned task). Returns true when something was cancelled.
+ * Kill the server-side in-flight codex recognition task (single-flight escape
+ * hatch for a stuck or orphaned task). Returns true when something was
+ * cancelled. Renders need no escape hatch: they follow their HTTP request.
  */
-export async function cancelAiTask(kind: 'understand' | 'render'): Promise<boolean> {
+export async function cancelAiTask(): Promise<boolean> {
   try {
-    const r = await fetch(`/api/ai/${kind}/cancel`, { method: 'POST' })
+    const r = await fetch('/api/ai/understand/cancel', { method: 'POST' })
     const j = (await r.json()) as { ok?: boolean; cancelled?: boolean }
     return !!j?.cancelled
   } catch {

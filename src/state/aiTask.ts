@@ -1,12 +1,20 @@
 import { create } from 'zustand'
-import { aiRender, historyAdd, type RenderMeta, type RenderRecord } from '../lib/ai'
+import { aiRender, historyAdd, type AiHttpConfig, type RenderMeta, type RenderRecord } from '../lib/ai'
 import { useUI } from '../ui/uiStore'
+
+/** Session-only defaults; the API key is intentionally never persisted. */
+export const AI_HTTP_DEFAULTS: AiHttpConfig = {
+  baseUrl: 'https://api.openai.com/v1',
+  apiKey: '',
+  model: 'gpt-image-1',
+}
 
 interface RenderForm {
   prompt: string | null
   format: string
   framing: 'fit' | 'editor'
   presets: Record<string, string>
+  api: AiHttpConfig
 }
 
 export interface RenderInput {
@@ -16,6 +24,7 @@ export interface RenderInput {
   aspect: string
   seed: string
   presets: string[]
+  api: AiHttpConfig
 }
 
 interface AiTaskState {
@@ -39,7 +48,7 @@ export const useAiTask = create<AiTaskState>()((set, get) => ({
   error: null,
   result: null,
   historyRevision: 0,
-  form: { prompt: null, format: 'match view', framing: 'fit', presets: {} },
+  form: { prompt: null, format: 'match view', framing: 'fit', presets: {}, api: { ...AI_HTTP_DEFAULTS } },
   updateForm: (patch) => set((s) => ({ form: { ...s.form, ...patch } })),
   setResult: (result) => set({ result }),
   start: async (prepare) => {
@@ -52,7 +61,14 @@ export const useAiTask = create<AiTaskState>()((set, get) => ({
       const input = await prepare()
       if (!current()) return
       set({ phase: 'running' })
-      const response = await aiRender({ ...input, signal: ctrl.signal })
+      const response = await aiRender({
+        image: input.image,
+        prompt: input.prompt,
+        images: input.images,
+        aspect: input.aspect,
+        ...input.api,
+        signal: ctrl.signal,
+      })
       if (!current()) return
       if (!response.ok) {
         if (response.code === 'cancelled') {
@@ -60,9 +76,7 @@ export const useAiTask = create<AiTaskState>()((set, get) => ({
           useUI.getState().pushToast('渲染已取消 Render cancelled')
           return
         }
-        throw new Error(response.code === 'busy'
-          ? '另一个 codex 任务进行中，请稍候 Another codex task is running'
-          : response.error)
+        throw new Error(response.error)
       }
       const meta: RenderMeta = {
         id: `r${crypto.randomUUID()}`,
