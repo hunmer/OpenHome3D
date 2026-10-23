@@ -33,8 +33,8 @@ const TYPES: FurnitureType[] = [
   'OTHER',
 ]
 
-type BrandFilter = 'ALL' | Brand
-type TypeFilter = 'ALL' | FurnitureType
+export type BrandFilter = 'ALL' | Brand
+export type TypeFilter = 'ALL' | FurnitureType
 
 /** Aim the thumbnail camera at the model's approximate bbox center, once. */
 function Aim({ y }: { y: number }) {
@@ -172,6 +172,68 @@ export function GlbThumb({ def }: { def: ModelDef }) {
   return url ? <img src={url} alt={def.name} /> : null
 }
 
+/** Lazy in-view thumbnail cell shared by the browser and the storage box cards. */
+export function CardThumb({ def }: { def: ModelDef }) {
+  const { ref, inView } = useInView<HTMLDivElement>()
+  return (
+    <div className="card-thumb" ref={ref}>
+      {inView && (def.kind === 'parametric' ? <ParamThumb def={def} /> : <GlbThumb def={def} />)}
+    </div>
+  )
+}
+
+/** Brand/type chip rows shared by the model browser and the storage box. */
+export function BrowserFilters({
+  brand,
+  onBrand,
+  type,
+  onType,
+  brandCount,
+  typeCount,
+}: {
+  brand: BrandFilter
+  onBrand: (b: BrandFilter) => void
+  type: TypeFilter
+  onType: (t: TypeFilter) => void
+  brandCount: (b: BrandFilter) => number
+  typeCount: (t: TypeFilter) => number
+}) {
+  return (
+    <div className="filters">
+      <div className="filter-row">
+        <span className="lbl filter-label">品牌 Brand</span>
+        <div className="chips">
+          <Chip label="全部 All" count={brandCount('ALL')} active={brand === 'ALL'} onClick={() => onBrand('ALL')} />
+          {BRANDS.map((b) => (
+            <Chip
+              key={b}
+              label={BRAND_LABELS[b]}
+              count={brandCount(b)}
+              active={brand === b}
+              onClick={() => onBrand(b)}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="filter-row">
+        <span className="lbl filter-label">类型 Type</span>
+        <div className="chips">
+          <Chip label="全部 All" count={typeCount('ALL')} active={type === 'ALL'} onClick={() => onType('ALL')} />
+          {TYPES.map((t) => (
+            <Chip
+              key={t}
+              label={TYPE_LABELS[t]}
+              count={typeCount(t)}
+              active={type === t}
+              onClick={() => onType(t)}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Card({
   def,
   mode,
@@ -191,7 +253,6 @@ function Card({
   onPick: () => void
   onDelete?: () => void
 }) {
-  const { ref, inView } = useInView<HTMLDivElement>()
   return (
     <div
       className={`card${current ? ' current' : ''}`}
@@ -203,9 +264,7 @@ function Card({
       }}
       title={def.name}
     >
-      <div className="card-thumb" ref={ref}>
-        {inView && (def.kind === 'parametric' ? <ParamThumb def={def} /> : <GlbThumb def={def} />)}
-      </div>
+      <CardThumb def={def} />
       <div className="card-name">
         {def.name}
         {owned && (
@@ -349,38 +408,14 @@ export default function ModelBrowser({ mode }: { mode: 'swap' | 'add' }) {
           </IconButton>
         </div>
 
-        <div className="filters">
-          <div className="filter-row">
-            <span className="lbl filter-label">品牌 Brand</span>
-            <div className="chips">
-              <Chip label="全部 All" count={brandCount('ALL')} active={brand === 'ALL'} onClick={() => setBrand('ALL')} />
-              {BRANDS.map((b) => (
-                <Chip
-                  key={b}
-                  label={BRAND_LABELS[b]}
-                  count={brandCount(b)}
-                  active={brand === b}
-                  onClick={() => setBrand(b)}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="filter-row">
-            <span className="lbl filter-label">类型 Type</span>
-            <div className="chips">
-              <Chip label="全部 All" count={typeCount('ALL')} active={type === 'ALL'} onClick={() => setType('ALL')} />
-              {TYPES.map((t) => (
-                <Chip
-                  key={t}
-                  label={TYPE_LABELS[t]}
-                  count={typeCount(t)}
-                  active={type === t}
-                  onClick={() => setType(t)}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
+        <BrowserFilters
+          brand={brand}
+          onBrand={setBrand}
+          type={type}
+          onType={setType}
+          brandCount={brandCount}
+          typeCount={typeCount}
+        />
 
         <div className="mb-grid">
           <ParamThumbWorker />

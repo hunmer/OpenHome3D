@@ -77,8 +77,29 @@ try {
   state = await modelState()
   assert.equal(state.furniture.length, beforeAdd + 2)
   assert.notEqual(state.selected, id)
-  await page.click('.sel-pill button[title*="Delete"]')
+  // deletion always routes to the storage box now — the item is stashed, not dropped
+  const beforeStorage = await page.evaluate(() => window.__store.getState().storage.length)
+  await page.click('.sel-pill button[title*="Store away"]')
   assert.equal((await modelState()).furniture.length, beforeAdd + 1)
+  assert.equal(
+    await page.evaluate(() => window.__store.getState().storage.length),
+    beforeStorage + 1,
+    'deleting must store the item, not drop it',
+  )
+
+  // the storage box reuses the browser filter UI: search + brand/type chips over stored instances
+  await clickText('储物箱')
+  await page.waitForSelector('.modal-panel .filters .chip')
+  const storedLabel = await page.evaluate(() => window.__store.getState().storage[0].label)
+  await page.type('.modal-panel input.search', storedLabel)
+  await page.waitForFunction(
+    () => document.querySelectorAll('.modal-panel .mb-grid .card').length === 1,
+    { timeout: 5000 },
+  )
+  await page.click('.modal-panel .card-place')
+  assert.equal((await modelState()).furniture.length, beforeAdd + 2, 'placing from storage must restore the item')
+  await page.click('.modal-panel button[title*="Close"]')
+  await page.waitForSelector('.modal-panel', { hidden: true })
 
   // Check the live Three camera, not just the projection flag in the store.
   await page.evaluate(() => window.__store.getState().setProjection('perspective'))
@@ -108,7 +129,7 @@ try {
   await page.waitForSelector('.ai-panel')
   await page.screenshot({ path: process.env.SHOT || '/tmp/openhome3d-interactions.png' })
   assert.deepEqual(errors, [], 'browser must have no console, page or HTTP errors')
-  console.log('interactions OK: page identity, load, add, keyboard, swap, undo/redo, duplicate/delete, live camera, sidebar, new-plan confirmation, AI panel (stubbed)')
+  console.log('interactions OK: page identity, load, add, keyboard, swap, undo/redo, duplicate/store-away, storage filters, live camera, sidebar, new-plan confirmation, AI panel (stubbed)')
 } finally {
   await browser.close()
 }

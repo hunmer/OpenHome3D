@@ -112,7 +112,7 @@ function useKeyboardShortcuts() {
         }
         case 'Delete':
         case 'Backspace':
-          s.removeFurniture(id)
+          s.storeFurniture(id)
           e.preventDefault()
           break
       }

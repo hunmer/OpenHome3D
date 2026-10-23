@@ -233,7 +233,6 @@ export default function StatusBar() {
     return f ? (roomById(s.home, f.roomId)?.name ?? '') : ''
   })
   const duplicateFurniture = useStore((s) => s.duplicateFurniture)
-  const removeFurniture = useStore((s) => s.removeFurniture)
   const storeFurniture = useStore((s) => s.storeFurniture)
   const openModal = useUI((s) => s.openModal)
   const pushToast = useUI((s) => s.pushToast)
@@ -277,9 +276,6 @@ export default function StatusBar() {
               }}
             >
               <StoreAwayIcon />
-            </IconButton>
-            <IconButton title="删除 Delete（不退款 no refund）" onClick={() => removeFurniture(inst.id)}>
-              ×
             </IconButton>
           </div>
         </div>
